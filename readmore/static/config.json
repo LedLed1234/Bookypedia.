@@ -1,0 +1,24 @@
+{
+  "defaults": {
+    "theme": "green",
+    "searchResultLimit": 4,
+    "startView": "all"
+  },
+  "options": {
+    "themes": [
+      { "value": "red", "label": "Red" },
+      { "value": "blue-white", "label": "Blue-white" },
+      { "value": "green", "label": "Green" },
+      { "value": "brown", "label": "Brown" },
+      { "value": "cozy", "label": "Cozy" },
+      { "value": "light", "label": "Light" }
+    ],
+    "searchResultLimits": [4, 6, 8, 12],
+    "startViews": [
+      { "value": "all", "label": "Alle" },
+      { "value": "reading", "label": "Lese gerade" },
+      { "value": "read", "label": "Bibliothek" },
+      { "value": "want_to_read", "label": "Wishlist" }
+    ]
+  }
+}

@@ -1,0 +1,52 @@
+# Python and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+**/.ssh/
+**/authorized_keys
+**/id_rsa*
+**/id_ecdsa*
+**/id_ed25519*
+secrets/
+credentials/
+
+# Runtime data, databases, backups, and logs
+instance/
+data/
+backups/
+logs/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.bak
+*.backup
+*.log
+
+# Machine-local configuration
+*.local.json
+compose.override.yaml
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+

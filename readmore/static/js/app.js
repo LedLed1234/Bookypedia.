@@ -1,0 +1,1811 @@
+const STATUS_LABELS = {
+  want_to_read: "Wishlist",
+  reading: "Lese gerade",
+  read: "Bibliothek",
+};
+
+const VIEW_CONTENT = {
+  all: {
+    title: "Alle Bücher",
+    emptyTitle: "Deine Sammlung ist noch leer.",
+    emptyCopy: "Suche oben nach einem Buch und füge es deiner Sammlung hinzu.",
+  },
+  reading: {
+    title: "Lese gerade",
+    emptyTitle: "Du liest gerade kein Buch.",
+    emptyCopy: "Suche oben nach einem Buch und starte deine nächste Lektüre.",
+  },
+  read: {
+    title: "Bibliothek",
+    emptyTitle: "Deine Bibliothek ist noch leer.",
+    emptyCopy: "Füge bereits gelesene Bücher hinzu und halte deine Bewertung fest.",
+  },
+  want_to_read: {
+    title: "Wishlist",
+    emptyTitle: "Deine Wishlist ist noch leer.",
+    emptyCopy: "Speichere Bücher, die du später lesen möchtest.",
+  },
+};
+
+const SORT_OPTIONS = {
+  added_desc: "Zuletzt hinzugefügt",
+  added_asc: "Zuerst hinzugefügt",
+  rating_desc: "Bewertung: hoch",
+  rating_asc: "Bewertung: niedrig",
+  title_asc: "Titel: A–Z",
+  title_desc: "Titel: Z–A",
+};
+const STATUS_HISTORY = [
+  { status: "want_to_read", field: "want_to_read_at", label: "Zur Wishlist hinzugefügt" },
+  { status: "reading", field: "reading_at", label: "Angefangen zu lesen" },
+  { status: "read", field: "read_at", label: "Fertig gelesen" },
+];
+const titleCollator = new Intl.Collator("de", { sensitivity: "base", numeric: true });
+const dateFormatter = new Intl.DateTimeFormat("de-DE", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+const state = {
+  books: [],
+  filter: "all",
+  searchResults: [],
+  suggestions: [],
+  remoteSuggestions: [],
+  suggestionQuery: "",
+  detailBook: null,
+  infoBook: null,
+  detailMetadataIdentity: null,
+  detailMetadata: null,
+  detailMetadataLoaded: false,
+  detailMetadataUnavailable: false,
+  descriptionExpanded: false,
+  seriesData: null,
+  seriesLoaded: false,
+  seriesStatus: null,
+  seriesRequestUrl: null,
+  libraryMode: "all",
+  seriesIndex: new Map(),
+  activeSeriesKey: null,
+  reviewCandidate: null,
+  seriesIndexLoading: false,
+  sort: "added_desc",
+  searchResultLimit: 4,
+};
+const grid = document.querySelector("#book-grid");
+const emptyState = document.querySelector("#empty-state");
+const loadingState = document.querySelector("#library-loading");
+const searchPanel = document.querySelector("#search-panel");
+const searchResults = document.querySelector("#search-results");
+const searchForm = document.querySelector("#search-form");
+const searchInput = document.querySelector("#search-input");
+const searchSuggestions = document.querySelector("#search-suggestions");
+const manualDialog = document.querySelector("#manual-dialog");
+const reviewDialog = document.querySelector("#review-dialog");
+const bookDialog = document.querySelector("#book-dialog");
+const collectionDialog = document.querySelector("#collection-dialog");
+const collectionBookList = document.querySelector("#collection-book-list");
+const groupingButton = document.querySelector("#grouping-button");
+const groupingButtonLabel = document.querySelector("#grouping-button-label");
+const sortButton = document.querySelector("#sort-button");
+const sortButtonLabel = document.querySelector("#sort-button-label");
+const sortMenu = document.querySelector("#sort-menu");
+const sortOptions = document.querySelectorAll("[data-sort-option]");
+const readingHistory = document.querySelector("#reading-history");
+const readingHistoryList = document.querySelector("#reading-history-list");
+const bookDialogMainView = document.querySelector("#book-dialog-main-view");
+const bookDialogInfoView = document.querySelector("#book-dialog-info-view");
+const bookDialogInfoButton = document.querySelector("#book-dialog-info");
+const bookInfoBackButton = document.querySelector("#book-info-back");
+const bookInfoGrid = document.querySelector("#book-info-grid");
+const bookInfoStatus = document.querySelector("#book-info-status");
+const seriesHeading = document.querySelector("#series-heading");
+const seriesPosition = document.querySelector("#series-position");
+const seriesContent = document.querySelector("#series-content");
+const seriesNote = document.querySelector("#series-note");
+const deleteDialog = document.querySelector("#delete-dialog");
+const confirmDeleteButton = document.querySelector("#confirm-delete");
+const appearanceButton = document.querySelector("#appearance-button");
+const appearanceMenu = document.querySelector("#appearance-menu");
+const themeOptions = document.querySelectorAll("[data-theme-option]");
+const settingsDialog = document.querySelector("#settings-dialog");
+const settingsThemeSelect = document.querySelector("#settings-theme");
+const settingsSearchLimitSelect = document.querySelector("#settings-search-limit");
+const settingsStartViewSelect = document.querySelector("#settings-start-view");
+const THEME_COLORS = {
+  red: "#101512",
+  "blue-white": "#101512",
+  green: "#101512",
+  brown: "#101512",
+  cozy: "#101512",
+  light: "#f3f1eb",
+};
+let toastTimer;
+let suggestionTimer;
+let suggestionController;
+let activeSuggestionIndex = -1;
+let pendingDelete;
+let seriesPollTimer;
+let groupingPollTimer;
+let metadataPollTimer;
+const searchCache = new Map();
+const SEARCH_CACHE_TTL = 10 * 60 * 1000;
+const SUGGESTION_DELAY = 160;
+const LANGUAGE_LABELS = {
+  eng: "Englisch",
+  ger: "Deutsch",
+  deu: "Deutsch",
+  fre: "Französisch",
+  fra: "Französisch",
+  spa: "Spanisch",
+  ita: "Italienisch",
+  jpn: "Japanisch",
+  por: "Portugiesisch",
+};
+const FALLBACK_APP_CONFIG = {
+  defaults: { theme: "green", searchResultLimit: 4, startView: "all" },
+  options: {
+    themes: [
+      { value: "red", label: "Red" },
+      { value: "blue-white", label: "Blue-white" },
+      { value: "green", label: "Green" },
+      { value: "brown", label: "Brown" },
+      { value: "cozy", label: "Cozy" },
+      { value: "light", label: "Light" },
+    ],
+    searchResultLimits: [4, 6, 8, 12],
+    startViews: [
+      { value: "all", label: "Alle" },
+      { value: "reading", label: "Lese gerade" },
+      { value: "read", label: "Bibliothek" },
+      { value: "want_to_read", label: "Wishlist" },
+    ],
+  },
+};
+let appConfig = FALLBACK_APP_CONFIG;
+
+function populateSelect(select, options) {
+  select.replaceChildren(...options.map(({ value, label }) => {
+    const option = document.createElement("option");
+    option.value = String(value);
+    option.textContent = label;
+    return option;
+  }));
+}
+
+async function loadAppConfig() {
+  try {
+    const response = await fetch("/static/config.json", { cache: "no-cache" });
+    if (!response.ok) throw new Error("Konfiguration nicht verfügbar");
+    const loaded = await response.json();
+    appConfig = {
+      defaults: { ...FALLBACK_APP_CONFIG.defaults, ...(loaded.defaults || {}) },
+      options: { ...FALLBACK_APP_CONFIG.options, ...(loaded.options || {}) },
+    };
+  } catch (_error) {
+    appConfig = FALLBACK_APP_CONFIG;
+  }
+  populateSelect(settingsThemeSelect, appConfig.options.themes);
+  populateSelect(
+    settingsSearchLimitSelect,
+    appConfig.options.searchResultLimits.map((value) => ({ value, label: `${value} Bücher` })),
+  );
+  populateSelect(settingsStartViewSelect, appConfig.options.startViews);
+}
+
+function setAppearanceMenu(open) {
+  appearanceMenu.hidden = !open;
+  appearanceButton.setAttribute("aria-expanded", String(open));
+}
+
+function setSortMenu(open) {
+  sortMenu.hidden = !open;
+  sortButton.setAttribute("aria-expanded", String(open));
+}
+
+function applySort(sort, persist = true) {
+  if (!Object.hasOwn(SORT_OPTIONS, sort)) sort = "added_desc";
+  state.sort = sort;
+  sortButtonLabel.textContent = SORT_OPTIONS[sort];
+  sortOptions.forEach((option) => {
+    option.setAttribute("aria-checked", String(option.dataset.sortOption === sort));
+  });
+  if (persist) {
+    try { localStorage.setItem("bookypedia-sort", sort); } catch (_error) {}
+  }
+  if (loadingState.hidden) renderLibrary();
+}
+
+function setLibraryFilter(filter) {
+  if (!Object.hasOwn(VIEW_CONTENT, filter)) filter = "all";
+  state.filter = filter;
+  document.querySelectorAll(".status-tab").forEach((tab) => {
+    const active = tab.dataset.filter === filter;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-pressed", String(active));
+  });
+  if (loadingState.hidden) renderLibrary();
+}
+
+function applyStartView(filter, persist = true) {
+  if (!Object.hasOwn(VIEW_CONTENT, filter)) filter = "all";
+  settingsStartViewSelect.value = filter;
+  if (persist) {
+    try { localStorage.setItem("bookypedia-start-view", filter); } catch (_error) {}
+  }
+  setLibraryFilter(filter);
+}
+
+function applySearchResultLimit(value, persist = true) {
+  const configuredLimits = appConfig.options.searchResultLimits.map(Number);
+  const defaultLimit = Number(appConfig.defaults.searchResultLimit) || 4;
+  const limit = configuredLimits.includes(Number(value)) ? Number(value) : defaultLimit;
+  state.searchResultLimit = limit;
+  settingsSearchLimitSelect.value = String(limit);
+  searchCache.clear();
+  if (persist) {
+    try { localStorage.setItem("bookypedia-search-limit", String(limit)); } catch (_error) {}
+  }
+}
+
+function applyTheme(theme, persist = true) {
+  if (!Object.hasOwn(THEME_COLORS, theme)) return;
+  document.documentElement.dataset.theme = theme;
+  settingsThemeSelect.value = theme;
+  document.querySelector('meta[name="theme-color"]').content = THEME_COLORS[theme];
+  themeOptions.forEach((option) => {
+    option.setAttribute("aria-checked", String(option.dataset.themeOption === theme));
+  });
+  if (persist) {
+    try { localStorage.setItem("bookypedia-theme", theme); } catch (_error) {}
+  }
+}
+
+async function api(url, options = {}) {
+  const response = await fetch(url, {
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    ...options,
+  });
+  const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload?.error || "Die Anfrage ist fehlgeschlagen.");
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
+}
+
+function showToast(message, isError = false) {
+  const toast = document.querySelector("#toast");
+  clearTimeout(toastTimer);
+  toast.textContent = message;
+  toast.classList.toggle("error", isError);
+  toast.hidden = false;
+  toastTimer = setTimeout(() => { toast.hidden = true; }, 3300);
+}
+
+function statusSelect(current) {
+  const select = document.createElement("select");
+  select.className = "status-select";
+  select.setAttribute("aria-label", "Lesestatus ändern");
+  for (const [value, label] of Object.entries(STATUS_LABELS)) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    option.selected = value === current;
+    select.append(option);
+  }
+  return select;
+}
+
+function coverElement(book) {
+  const wrap = document.createElement("div");
+  wrap.className = "book-cover-wrap";
+  if (book.cover_url) {
+    const image = document.createElement("img");
+    image.className = "book-cover";
+    image.src = book.cover_url;
+    image.alt = `Cover von ${book.title}`;
+    image.loading = "lazy";
+    image.addEventListener("error", () => {
+      image.remove();
+      wrap.append(placeholderCover(book.title));
+    }, { once: true });
+    wrap.append(image);
+  } else {
+    wrap.append(placeholderCover(book.title));
+  }
+  return wrap;
+}
+
+function placeholderCover(title) {
+  const placeholder = document.createElement("div");
+  placeholder.className = "book-placeholder";
+  placeholder.setAttribute("role", "img");
+  placeholder.setAttribute("aria-label", `Kein Cover für ${title}`);
+  const monogram = document.createElement("strong");
+  monogram.className = "book-placeholder-mark";
+  monogram.textContent = bookMonogram(title);
+  const label = document.createElement("span");
+  label.className = "book-placeholder-label";
+  label.textContent = "Kein Cover";
+  placeholder.append(monogram, label);
+  return placeholder;
+}
+
+function bookMonogram(title) {
+  const words = String(title || "Buch").trim().split(/\s+/).filter(Boolean);
+  return words.slice(0, 2).map((word) => word[0]).join("").toLocaleUpperCase("de") || "B";
+}
+
+function authorText(book) {
+  return book.authors?.length ? book.authors.join(", ") : "Autor unbekannt";
+}
+
+function pageCountText(book, fallback = "") {
+  const pages = Number(book?.page_count);
+  return Number.isInteger(pages) && pages > 0 ? `${pages.toLocaleString("de-DE")} Seiten` : fallback;
+}
+
+function createBookInfoButton(book, insideBookDialog = false) {
+  const button = document.createElement("button");
+  button.className = insideBookDialog
+    ? "icon-button series-info-button"
+    : "icon-button book-card-info";
+  button.type = "button";
+  button.textContent = "ⓘ";
+  button.title = "Weitere Buchinformationen";
+  button.setAttribute("aria-label", `Weitere Informationen zu ${book.title} anzeigen`);
+  button.addEventListener("click", () => {
+    if (insideBookDialog) openBookInfo(book);
+    else openBookDetails(book, "info");
+  });
+  return button;
+}
+
+function normalizeSearch(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .toLocaleLowerCase("de")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function editDistance(left, right) {
+  const leftCharacters = Array.from(left);
+  const rightCharacters = Array.from(right);
+  const previous = Array.from({ length: rightCharacters.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= leftCharacters.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= rightCharacters.length; column += 1) {
+      current[column] = Math.min(
+        current[column - 1] + 1,
+        previous[column] + 1,
+        previous[column - 1] + (leftCharacters[row - 1] === rightCharacters[column - 1] ? 0 : 1),
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[rightCharacters.length];
+}
+
+function fuzzyBookScore(book, query) {
+  const needle = normalizeSearch(query);
+  const haystack = normalizeSearch(`${book.title} ${authorText(book)} ${book.isbn || ""}`);
+  if (!needle || !haystack) return -1;
+  if (haystack === needle) return 220;
+  if (haystack.startsWith(needle)) return 200;
+  const containedAt = haystack.indexOf(needle);
+  if (containedAt >= 0) return 180 - Math.min(containedAt, 40);
+
+  const words = haystack.split(" ");
+  const queryWords = needle.split(" ");
+  let score = 0;
+  for (const queryWord of queryWords) {
+    let best = -1;
+    for (const word of words) {
+      if (word.startsWith(queryWord)) best = Math.max(best, 125);
+      else if (word.includes(queryWord)) best = Math.max(best, 105);
+      else {
+        const distance = editDistance(queryWord, word);
+        const tolerance = queryWord.length >= 7 ? 2 : 1;
+        if (distance <= tolerance) best = Math.max(best, 90 - (distance * 15));
+      }
+    }
+    if (best < 0) return -1;
+    score += best;
+  }
+  return score / queryWords.length;
+}
+
+function suggestionIdentity(book) {
+  return book.provider_book_id || book.isbn || normalizeSearch(`${book.title}|${authorText(book)}`);
+}
+
+function combinedSuggestions(query, remoteResults = []) {
+  const local = state.books
+    .map((book) => ({ book, score: fuzzyBookScore(book, query) }))
+    .filter((entry) => entry.score >= 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 2)
+    .map((entry) => ({ ...entry.book, suggestion_source: "collection" }));
+  const seen = new Set(local.map(suggestionIdentity));
+  const combined = [...local];
+  for (const book of remoteResults) {
+    const identity = suggestionIdentity(book);
+    if (seen.has(identity)) {
+      const localIndex = combined.findIndex((candidate) => suggestionIdentity(candidate) === identity);
+      const localBook = combined[localIndex];
+      combined[localIndex] = {
+        ...book,
+        ...localBook,
+        cover_url: localBook.cover_url || book.cover_url,
+        first_publish_year: localBook.first_publish_year || book.first_publish_year,
+        page_count: localBook.page_count || book.page_count,
+      };
+      continue;
+    }
+    seen.add(identity);
+    combined.push(book);
+    if (combined.length === 6) break;
+  }
+  return combined;
+}
+
+function suggestionCover(book) {
+  if (!book.cover_url) {
+    const placeholder = document.createElement("span");
+    placeholder.className = "suggestion-cover suggestion-placeholder";
+    placeholder.textContent = bookMonogram(book.title);
+    placeholder.setAttribute("aria-hidden", "true");
+    return placeholder;
+  }
+  const image = document.createElement("img");
+  image.className = "suggestion-cover";
+  image.src = book.cover_url;
+  image.alt = "";
+  image.loading = "lazy";
+  image.addEventListener("error", () => {
+    const placeholder = document.createElement("span");
+    placeholder.className = "suggestion-cover suggestion-placeholder";
+    placeholder.textContent = bookMonogram(book.title);
+    placeholder.setAttribute("aria-hidden", "true");
+    image.replaceWith(placeholder);
+  }, { once: true });
+  return image;
+}
+
+function updateActiveSuggestion(index) {
+  const rows = [...searchSuggestions.querySelectorAll(".suggestion-row")];
+  activeSuggestionIndex = rows.length ? Math.max(-1, Math.min(index, rows.length - 1)) : -1;
+  rows.forEach((row, rowIndex) => row.classList.toggle("active", rowIndex === activeSuggestionIndex));
+  if (activeSuggestionIndex >= 0) {
+    const active = rows[activeSuggestionIndex].querySelector(".suggestion-main");
+    searchInput.setAttribute("aria-activedescendant", active.id);
+    rows[activeSuggestionIndex].scrollIntoView({ block: "nearest" });
+  } else {
+    searchInput.removeAttribute("aria-activedescendant");
+  }
+}
+
+function hideSuggestions() {
+  searchSuggestions.hidden = true;
+  searchInput.setAttribute("aria-expanded", "false");
+  updateActiveSuggestion(-1);
+}
+
+function renderSuggestions(query, { loading = false, failed = false } = {}) {
+  searchSuggestions.replaceChildren();
+  activeSuggestionIndex = -1;
+
+  state.suggestions.forEach((book, index) => {
+    const row = document.createElement("div");
+    row.className = "suggestion-row";
+    const main = document.createElement("button");
+    main.className = "suggestion-main";
+    main.id = `suggestion-${index}`;
+    main.type = "button";
+    main.append(suggestionCover(book));
+
+    const copy = document.createElement("span");
+    copy.className = "suggestion-copy";
+    const title = document.createElement("strong");
+    title.className = "suggestion-title";
+    title.textContent = book.title;
+    const meta = document.createElement("span");
+    meta.className = "suggestion-meta";
+    const details = [authorText(book), book.first_publish_year, pageCountText(book, "Seitenzahl unbekannt")]
+      .filter(Boolean)
+      .join(" · ");
+    meta.textContent = details;
+    if (book.suggestion_source === "collection") {
+      const source = document.createElement("span");
+      source.className = "suggestion-meta suggestion-source";
+      source.textContent = "In deiner Sammlung";
+      copy.append(title, meta, source);
+    } else {
+      copy.append(title, meta);
+    }
+    main.append(copy);
+    main.addEventListener("click", () => selectSuggestion(index));
+    main.addEventListener("mouseenter", () => updateActiveSuggestion(index));
+
+    const wishlist = document.createElement("button");
+    wishlist.className = "button button-secondary suggestion-wishlist";
+    wishlist.type = "button";
+    if (isInCollection(book)) {
+      wishlist.textContent = "Gespeichert";
+      wishlist.disabled = true;
+    } else {
+      wishlist.textContent = "＋ Wishlist";
+      wishlist.setAttribute("aria-label", `${book.title} zur Wishlist hinzufügen`);
+      wishlist.addEventListener("click", () => addSearchBook(book, "want_to_read", wishlist, true));
+    }
+    row.append(main, wishlist);
+    searchSuggestions.append(row);
+  });
+
+  if (!state.suggestions.length) {
+    const status = document.createElement("p");
+    status.className = "suggestion-status";
+    status.textContent = loading
+      ? "Vorschläge werden gesucht …"
+      : failed ? "Vorschläge sind gerade nicht verfügbar." : "Keine direkten Vorschläge gefunden.";
+    searchSuggestions.append(status);
+  }
+
+  const all = document.createElement("button");
+  all.className = "suggestion-all";
+  all.type = "button";
+  all.textContent = `Alle Ergebnisse für „${query}“`;
+  all.addEventListener("click", () => executeSearch(query));
+  searchSuggestions.append(all);
+  searchSuggestions.hidden = false;
+  searchInput.setAttribute("aria-expanded", "true");
+}
+
+async function cachedBookSearch(query, signal, suggestions = false) {
+  const resultLimit = suggestions ? 6 : state.searchResultLimit;
+  const key = `${suggestions ? "suggest" : "search"}:${resultLimit}:${normalizeSearch(query)}`;
+  const cached = searchCache.get(key);
+  if (cached && Date.now() - cached.savedAt < SEARCH_CACHE_TTL) return cached.results;
+  const mode = suggestions ? "&suggest=1" : "";
+  const limit = suggestions ? "" : `&limit=${resultLimit}`;
+  const payload = await api(`/api/search?q=${encodeURIComponent(query)}${mode}${limit}`, { signal });
+  searchCache.set(key, { results: payload.results, savedAt: Date.now() });
+  return payload.results;
+}
+
+function queueSuggestionSearch() {
+  const query = searchInput.value.trim();
+  clearTimeout(suggestionTimer);
+  suggestionController?.abort();
+  state.suggestionQuery = query;
+  if (query.length < 3) {
+    state.suggestions = [];
+    hideSuggestions();
+    return;
+  }
+
+  const reusableRemote = state.remoteSuggestions.filter((book) => fuzzyBookScore(book, query) >= 0);
+  state.suggestions = combinedSuggestions(query, reusableRemote);
+  renderSuggestions(query, { loading: true });
+  const isbnLike = /^[\dXx\s-]{10,17}$/.test(query);
+  suggestionTimer = setTimeout(async () => {
+    suggestionController = new AbortController();
+    try {
+      const remote = await cachedBookSearch(query, suggestionController.signal, true);
+      if (searchInput.value.trim() !== query) return;
+      state.remoteSuggestions = remote;
+      state.suggestions = combinedSuggestions(query, remote);
+      renderSuggestions(query);
+    } catch (error) {
+      if (error.name === "AbortError" || searchInput.value.trim() !== query) return;
+      state.suggestions = combinedSuggestions(query, reusableRemote);
+      renderSuggestions(query, { failed: true });
+    }
+  }, isbnLike ? 0 : SUGGESTION_DELAY);
+}
+
+function selectSuggestion(index) {
+  const book = state.suggestions[index];
+  if (!book) return;
+  searchInput.value = book.title;
+  executeSearch(book.title);
+}
+
+function renderLibrary() {
+  loadingState.hidden = true;
+  grid.replaceChildren();
+  const filtered = state.filter === "all" ? state.books : state.books.filter((book) => book.status === state.filter);
+  const visible = sortBooks(filtered);
+  updateCounts(visible.length);
+  if (state.libraryMode === "series") renderGroupedLibrary(visible);
+  else visible.forEach((book) => grid.append(libraryCard(book)));
+  emptyState.hidden = visible.length !== 0;
+}
+
+function sortBooks(books) {
+  return [...books].sort((left, right) => {
+    if (state.sort === "rating_desc" || state.sort === "rating_asc") {
+      const leftRated = Number.isInteger(left.rating);
+      const rightRated = Number.isInteger(right.rating);
+      if (leftRated !== rightRated) return leftRated ? -1 : 1;
+      const ratingDifference = state.sort === "rating_desc"
+        ? (right.rating || 0) - (left.rating || 0)
+        : (left.rating || 0) - (right.rating || 0);
+      if (ratingDifference) return ratingDifference;
+    } else if (state.sort === "title_asc" || state.sort === "title_desc") {
+      const titleDifference = titleCollator.compare(left.title, right.title);
+      return state.sort === "title_asc" ? titleDifference : -titleDifference;
+    } else {
+      const newestFirst = (Date.parse(right.created_at || "") || 0) - (Date.parse(left.created_at || "") || 0);
+      const dateDifference = state.sort === "added_asc" ? -newestFirst : newestFirst;
+      if (dateDifference) return dateDifference;
+      return state.sort === "added_asc"
+        ? (left.id || 0) - (right.id || 0)
+        : (right.id || 0) - (left.id || 0);
+    }
+    return titleCollator.compare(left.title, right.title);
+  });
+}
+
+function seriesKeyForBook(book) {
+  const series = state.seriesIndex.get(book.id);
+  if (!series) return null;
+  return series.provider_series_id || `name:${normalizeSearch(series.name)}`;
+}
+
+function renderGroupedLibrary(visibleBooks) {
+  const renderedSeries = new Set();
+  visibleBooks.forEach((book) => {
+    const seriesKey = seriesKeyForBook(book);
+    if (!seriesKey) {
+      grid.append(libraryCard(book));
+      return;
+    }
+    if (renderedSeries.has(seriesKey)) return;
+    renderedSeries.add(seriesKey);
+    const books = visibleBooks.filter((candidate) => seriesKeyForBook(candidate) === seriesKey);
+    grid.append(seriesCollectionCard(seriesKey, books));
+  });
+  const count = document.querySelector("#view-count");
+  const suffix = renderedSeries.size === 1 ? "1 Reihe" : `${renderedSeries.size} Reihen`;
+  if (renderedSeries.size) count.textContent = `${visibleBooks.length} ${visibleBooks.length === 1 ? "Buch" : "Bücher"} · ${suffix}`;
+}
+
+function seriesCollectionCard(seriesKey, books) {
+  const series = state.seriesIndex.get(books[0].id);
+  const article = document.createElement("article");
+  article.className = "book-card series-collection-card";
+
+  const cover = document.createElement("div");
+  cover.className = "book-cover-wrap series-cover-stack book-detail-trigger";
+  cover.tabIndex = 0;
+  cover.setAttribute("role", "button");
+  cover.setAttribute("aria-label", `${series.name} öffnen`);
+  const coveredBooks = books.filter((book) => book.cover_url).slice(0, 3);
+  if (coveredBooks.length) {
+    coveredBooks.forEach((book) => {
+      const image = document.createElement("img");
+      image.className = "series-stack-cover";
+      image.src = book.cover_url;
+      image.alt = "";
+      image.loading = "lazy";
+      image.addEventListener("error", () => image.remove(), { once: true });
+      cover.append(image);
+    });
+  } else {
+    cover.append(placeholderCover(series.name));
+  }
+  const badge = document.createElement("span");
+  badge.className = "series-collection-badge";
+  badge.textContent = "Reihe";
+  cover.append(badge);
+
+  const open = () => openCollectionDialog(seriesKey);
+  cover.addEventListener("click", open);
+  cover.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      open();
+    }
+  });
+
+  const body = document.createElement("div");
+  body.className = "book-body";
+  const meta = document.createElement("div");
+  meta.className = "book-meta";
+  const title = document.createElement("h3");
+  title.className = "book-title";
+  const titleButton = document.createElement("button");
+  titleButton.className = "book-title-link";
+  titleButton.type = "button";
+  titleButton.textContent = series.name;
+  titleButton.addEventListener("click", open);
+  title.append(titleButton);
+  const count = document.createElement("p");
+  count.className = "book-author";
+  count.textContent = `${books.length} ${books.length === 1 ? "gespeichertes Buch" : "gespeicherte Bücher"}`;
+  const titles = document.createElement("p");
+  titles.className = "series-title-preview";
+  titles.textContent = books.map((book) => book.title).join(" · ");
+  meta.append(title, count, titles);
+
+  const button = document.createElement("button");
+  button.className = "button button-secondary";
+  button.type = "button";
+  button.textContent = "Bücher anzeigen";
+  button.addEventListener("click", open);
+  body.append(meta, button);
+  article.append(cover, body);
+  return article;
+}
+
+async function ensureSeriesIndex(books) {
+  if (state.seriesIndexLoading) return;
+  state.seriesIndexLoading = true;
+  const unresolved = books.filter((book) => !state.seriesIndex.has(book.id));
+  unresolved.filter((book) => !book.provider_book_id).forEach((book) => state.seriesIndex.set(book.id, null));
+  const catalogueBooks = unresolved.filter((book) => book.provider_book_id);
+  let cursor = 0;
+  let failures = 0;
+  let pending = 0;
+  async function worker() {
+    while (cursor < catalogueBooks.length) {
+      const book = catalogueBooks[cursor];
+      cursor += 1;
+      try {
+        const payload = await api(`/api/books/${book.id}/series`);
+        if (payload.series || payload.status === "no_series") {
+          state.seriesIndex.set(book.id, payload.series);
+        }
+        if (payload.status !== "ready" && payload.status !== "no_series") {
+          pending += 1;
+        }
+      } catch (_error) {
+        failures += 1;
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(3, catalogueBooks.length) }, () => worker()));
+  state.seriesIndexLoading = false;
+  if (failures) showToast(`${failures} Reihen konnten gerade nicht abgefragt werden.`, true);
+  clearTimeout(groupingPollTimer);
+  if ((pending || failures) && state.libraryMode === "series") {
+    groupingPollTimer = setTimeout(async () => {
+      await ensureSeriesIndex(state.books);
+      if (state.libraryMode === "series") renderLibrary();
+    }, 1600);
+  }
+}
+
+function openCollectionDialog(seriesKey) {
+  state.activeSeriesKey = seriesKey;
+  renderCollectionDialog(seriesKey);
+  collectionDialog.showModal();
+}
+
+function renderCollectionDialog(seriesKey) {
+  const books = state.books.filter((book) => seriesKeyForBook(book) === seriesKey);
+  if (!books.length) {
+    if (collectionDialog.open) collectionDialog.close();
+    return;
+  }
+  const series = state.seriesIndex.get(books[0].id);
+  document.querySelector("#collection-dialog-title").textContent = series.name;
+  document.querySelector("#collection-dialog-count").textContent = `${books.length} ${books.length === 1 ? "gespeichertes Buch" : "gespeicherte Bücher"}`;
+  collectionBookList.replaceChildren(...books.map(collectionBookRow));
+}
+
+function collectionBookRow(book) {
+  const row = document.createElement("div");
+  row.className = "collection-book-row";
+  row.append(suggestionCover(book));
+
+  const copy = document.createElement("div");
+  copy.className = "collection-book-copy";
+  const title = document.createElement("strong");
+  title.textContent = book.title;
+  const author = document.createElement("span");
+  author.textContent = authorText(book);
+  copy.append(title, author);
+
+  const select = statusSelect(book.status);
+  select.addEventListener("change", async () => {
+    const previous = book.status;
+    select.disabled = true;
+    try {
+      await api(`/api/books/${book.id}`, { method: "PATCH", body: JSON.stringify({ status: select.value }) });
+      await loadBooks();
+      showToast(`„${book.title}“ ist jetzt in „${STATUS_LABELS[select.value]}“.`);
+    } catch (error) {
+      select.value = previous;
+      select.disabled = false;
+      showToast(`Nicht gespeichert: ${error.message}`, true);
+    }
+  });
+
+  const review = document.createElement("button");
+  review.className = "collection-review-button";
+  if (book.rating) review.classList.add("rated");
+  review.type = "button";
+  review.textContent = book.rating ? `★ ${book.rating}` : "☆";
+  review.title = book.rating || book.review ? "Bewertung bearbeiten" : "Buch bewerten";
+  review.setAttribute("aria-label", `${book.title} bewerten`);
+  review.addEventListener("click", () => openReview(book));
+  row.append(copy, select, review);
+  return row;
+}
+
+function libraryCard(book) {
+  const article = document.createElement("article");
+  article.className = "book-card";
+  const cover = coverElement(book);
+  cover.classList.add("book-detail-trigger");
+  cover.tabIndex = 0;
+  cover.setAttribute("role", "button");
+  cover.setAttribute("aria-label", `Details und Reihe von ${book.title} anzeigen`);
+  cover.addEventListener("click", () => openBookDetails(book));
+  cover.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openBookDetails(book);
+    }
+  });
+  article.append(cover);
+
+  const body = document.createElement("div");
+  body.className = "book-body";
+  const meta = document.createElement("div");
+  meta.className = "book-meta";
+  const title = document.createElement("h3");
+  title.className = "book-title";
+  const titleButton = document.createElement("button");
+  titleButton.className = "book-title-link";
+  titleButton.type = "button";
+  titleButton.textContent = book.title;
+  titleButton.setAttribute("aria-label", `Details und Reihe von ${book.title} anzeigen`);
+  titleButton.addEventListener("click", () => openBookDetails(book));
+  title.append(titleButton);
+  const author = document.createElement("p");
+  author.className = "book-author";
+  author.textContent = authorText(book);
+  meta.append(title, author);
+  const heading = document.createElement("div");
+  heading.className = "book-card-heading";
+  heading.append(meta, createBookInfoButton(book));
+  body.append(heading);
+
+  if (book.rating) {
+    const rating = document.createElement("p");
+    rating.className = "rating-display";
+    rating.textContent = `${"★".repeat(book.rating)}${"☆".repeat(5 - book.rating)}`;
+    const hidden = document.createElement("span");
+    hidden.textContent = `${book.rating}/5`;
+    rating.append(hidden);
+    body.append(rating);
+  }
+  if (book.review) {
+    const review = document.createElement("p");
+    review.className = "review-excerpt";
+    review.textContent = `„${book.review}“`;
+    body.append(review);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+  const select = statusSelect(book.status);
+  select.addEventListener("change", async () => {
+    const previous = book.status;
+    select.disabled = true;
+    try {
+      await api(`/api/books/${book.id}`, { method: "PATCH", body: JSON.stringify({ status: select.value }) });
+      showToast(`„${book.title}“ ist jetzt in „${STATUS_LABELS[select.value]}“.`);
+      await loadBooks();
+    } catch (error) {
+      select.value = previous;
+      showToast(`Nicht gespeichert: ${error.message}`, true);
+    } finally { select.disabled = false; }
+  });
+  const row = document.createElement("div");
+  row.className = "card-action-row";
+  const reviewButton = document.createElement("button");
+  reviewButton.className = "button button-secondary";
+  reviewButton.type = "button";
+  reviewButton.textContent = book.rating || book.review ? "Bewertung bearbeiten" : "Bewerten";
+  reviewButton.addEventListener("click", () => openReview(book));
+  const deleteButton = document.createElement("button");
+  deleteButton.className = "icon-button";
+  deleteButton.type = "button";
+  deleteButton.setAttribute("aria-label", `${book.title} entfernen`);
+  deleteButton.title = "Aus Sammlung entfernen";
+  deleteButton.textContent = "×";
+  deleteButton.addEventListener("click", () => deleteBook(book, deleteButton));
+  row.append(reviewButton, deleteButton);
+  actions.append(select, row);
+  body.append(actions);
+  article.append(body);
+  return article;
+}
+
+function setBookDialogView(view, moveFocus = false) {
+  const showInfo = view === "info";
+  bookDialogMainView.hidden = showInfo;
+  bookDialogInfoView.hidden = !showInfo;
+  bookDialogInfoButton.hidden = showInfo;
+  document.querySelector("#book-dialog-kicker").textContent = showInfo
+    ? "Buchinformationen"
+    : "Buchdetails";
+  if (showInfo) renderBookInfo();
+  if (moveFocus) (showInfo ? bookInfoBackButton : bookDialogInfoButton).focus();
+}
+
+function displayLanguage(value) {
+  const code = String(value || "").replace(/^\/languages\//, "").toLocaleLowerCase("de");
+  return LANGUAGE_LABELS[code] || value;
+}
+
+function renderBookInfo() {
+  const metadata = state.detailMetadata || state.infoBook || state.detailBook || {};
+  const fields = [
+    ["ISBN", metadata.isbn],
+    ["Verlag", metadata.publisher],
+    ["Erscheinungsdatum", metadata.publish_date || metadata.first_publish_year],
+    ["Seitenzahl", pageCountText(metadata)],
+    ["Sprache", displayLanguage(metadata.language)],
+    ["Format", metadata.physical_format],
+    ["Untertitel", metadata.subtitle],
+    ["Originaltitel", metadata.original_title],
+  ].filter(([, value]) => value);
+
+  bookInfoGrid.replaceChildren();
+  fields.forEach(([label, value]) => {
+    const item = document.createElement("div");
+    item.className = "book-info-item";
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    description.textContent = value;
+    item.append(term, description);
+    bookInfoGrid.append(item);
+  });
+
+  const descriptionSection = document.querySelector("#book-description");
+  const descriptionCopy = document.querySelector("#book-description-copy");
+  descriptionCopy.textContent = metadata.description || "";
+  descriptionSection.hidden = !metadata.description;
+  updateDescriptionExpansion(metadata.description || "");
+
+  const subjectSection = document.querySelector("#book-subjects");
+  const subjectList = document.querySelector("#book-subject-list");
+  const subjects = Array.isArray(metadata.subjects) ? metadata.subjects.filter(Boolean) : [];
+  subjectList.replaceChildren(...subjects.map((subject) => {
+    const chip = document.createElement("span");
+    chip.textContent = subject;
+    return chip;
+  }));
+  subjectSection.hidden = subjects.length === 0;
+
+  if (!state.detailMetadataLoaded) {
+    bookInfoStatus.textContent = "Weitere Informationen werden geladen …";
+  } else if (state.detailMetadataUnavailable) {
+    bookInfoStatus.textContent = fields.length || metadata.description
+      ? "Weitere Angaben sind momentan nicht erreichbar. Verfügbare Daten werden angezeigt."
+      : "Weitere Buchinformationen sind momentan nicht erreichbar.";
+  } else if (!fields.length && !metadata.description && !subjects.length) {
+    bookInfoStatus.textContent = "Für dieses Buch sind keine zusätzlichen Informationen verfügbar.";
+  } else {
+    bookInfoStatus.textContent = "";
+  }
+}
+
+function updateDescriptionExpansion(description) {
+  const copy = document.querySelector("#book-description-copy");
+  const toggle = document.querySelector("#book-description-toggle");
+  const canExpand = String(description || "").trim().length > 260;
+  copy.classList.toggle("collapsed", canExpand && !state.descriptionExpanded);
+  toggle.hidden = !canExpand;
+  toggle.textContent = state.descriptionExpanded ? "Weniger anzeigen" : "Mehr anzeigen";
+  toggle.setAttribute("aria-expanded", String(state.descriptionExpanded));
+}
+
+async function loadBookMetadata(book, metadataIdentity) {
+  clearTimeout(metadataPollTimer);
+  state.detailMetadataIdentity = metadataIdentity;
+  state.detailMetadata = { ...book };
+  state.detailMetadataLoaded = false;
+  state.detailMetadataUnavailable = false;
+  renderBookInfo();
+  if (!book.provider_book_id) {
+    state.detailMetadataLoaded = true;
+    renderBookInfo();
+    return;
+  }
+
+  const url = book.id
+    ? `/api/books/${book.id}/metadata`
+    : `/api/metadata?provider_book_id=${encodeURIComponent(book.provider_book_id)}${book.provider_edition_id ? `&provider_edition_id=${encodeURIComponent(book.provider_edition_id)}` : ""}`;
+  try {
+    const payload = await api(url);
+    if (suggestionIdentity(state.infoBook || {}) !== metadataIdentity) return;
+    state.detailMetadata = { ...book, ...(payload.metadata || {}) };
+    if (["pending", "running", "retry"].includes(payload.status)) {
+      state.detailMetadataLoaded = false;
+      state.detailMetadataUnavailable = false;
+      renderBookInfo();
+      scheduleMetadataPoll(url, book, metadataIdentity, 1);
+      return;
+    }
+    state.detailMetadataLoaded = true;
+    state.detailMetadataUnavailable = payload.status === "unavailable";
+    renderBookInfo();
+  } catch (_error) {
+    if (suggestionIdentity(state.infoBook || {}) !== metadataIdentity) return;
+    state.detailMetadataUnavailable = true;
+    state.detailMetadataLoaded = true;
+    renderBookInfo();
+  }
+}
+
+function scheduleMetadataPoll(url, book, metadataIdentity, attempt) {
+  clearTimeout(metadataPollTimer);
+  const delay = Math.min(5000, 650 + attempt * 250);
+  metadataPollTimer = setTimeout(async () => {
+    if (!bookDialog.open || suggestionIdentity(state.infoBook || {}) !== metadataIdentity) return;
+    try {
+      const payload = await api(url);
+      if (!bookDialog.open || suggestionIdentity(state.infoBook || {}) !== metadataIdentity) return;
+      state.detailMetadata = { ...book, ...(payload.metadata || {}) };
+      if (["pending", "running", "retry"].includes(payload.status)) {
+        renderBookInfo();
+        scheduleMetadataPoll(url, book, metadataIdentity, attempt + 1);
+        return;
+      }
+      state.detailMetadataLoaded = true;
+      state.detailMetadataUnavailable = payload.status === "unavailable";
+      renderBookInfo();
+    } catch (_error) {
+      scheduleMetadataPoll(url, book, metadataIdentity, attempt + 1);
+    }
+  }, delay);
+}
+
+function renderBookDialogHeader(book) {
+  document.querySelector("#book-dialog-title").textContent = book.title;
+  document.querySelector("#book-dialog-author").textContent = authorText(book);
+  const original = document.querySelector("#book-dialog-original");
+  const originalParts = [book.original_title, book.original_authors?.[0]].filter(Boolean);
+  original.textContent = originalParts.length ? `Original: ${originalParts.join(" · ")}` : "";
+  original.hidden = originalParts.length === 0;
+}
+
+function openBookInfo(book) {
+  const infoBook = findCollectionBook(book) || book;
+  const metadataIdentity = suggestionIdentity(infoBook);
+  state.infoBook = infoBook;
+  renderBookDialogHeader(infoBook);
+  if (state.detailMetadataIdentity !== metadataIdentity) {
+    state.descriptionExpanded = false;
+    loadBookMetadata(infoBook, metadataIdentity);
+  }
+  setBookDialogView("info", true);
+}
+
+function returnToBookDetails() {
+  if (!state.detailBook) return;
+  state.infoBook = state.detailBook;
+  renderBookDialogHeader(state.detailBook);
+  setBookDialogView("main", true);
+}
+
+async function openBookDetails(book, initialView = "main") {
+  const detailBook = findCollectionBook(book) || book;
+  const detailIdentity = suggestionIdentity(detailBook);
+  state.detailBook = detailBook;
+  state.infoBook = detailBook;
+  state.descriptionExpanded = false;
+  state.seriesData = null;
+  state.seriesLoaded = false;
+  state.seriesStatus = null;
+  renderBookDialogHeader(detailBook);
+  loadBookMetadata(detailBook, detailIdentity);
+  setBookDialogView(initialView);
+  renderReadingHistory(detailBook);
+  seriesHeading.textContent = "Reiheninformationen";
+  seriesPosition.hidden = true;
+  seriesNote.textContent = "";
+  seriesContent.classList.add("series-loading");
+  seriesContent.textContent = "Reiheninformationen werden geladen …";
+  bookDialog.showModal();
+
+  try {
+    const seriesUrl = detailBook.id
+      ? `/api/books/${detailBook.id}/series`
+      : `/api/series?provider_book_id=${encodeURIComponent(detailBook.provider_book_id || "")}${(detailBook.authors || []).map((author) => `&author=${encodeURIComponent(author)}`).join("")}`;
+    state.seriesRequestUrl = seriesUrl;
+    const payload = await api(seriesUrl);
+    if (suggestionIdentity(state.detailBook || {}) !== detailIdentity) return;
+    applySeriesPayload(payload, seriesUrl, detailIdentity);
+  } catch (error) {
+    if (suggestionIdentity(state.detailBook || {}) !== detailIdentity) return;
+    state.seriesData = null;
+    state.seriesLoaded = true;
+    renderSeriesDetails();
+    seriesHeading.textContent = "Reihe gerade nicht verfügbar";
+    seriesNote.textContent = `${error.message} Das angeklickte Buch kannst du trotzdem bearbeiten.`;
+  }
+}
+
+function renderReadingHistory(book) {
+  readingHistoryList.replaceChildren();
+  readingHistory.hidden = !book?.id;
+  if (!book?.id) return;
+
+  STATUS_HISTORY.forEach(({ status, field, label }) => {
+    const item = document.createElement("div");
+    item.className = "reading-milestone";
+    if (book.status === status) {
+      item.classList.add("current");
+      item.setAttribute("aria-current", "step");
+    }
+    const header = document.createElement("div");
+    header.className = "reading-milestone-header";
+    const name = document.createElement("span");
+    name.textContent = label;
+    header.append(name);
+    if (book.status === status) {
+      const current = document.createElement("small");
+      current.textContent = "Aktuell";
+      header.append(current);
+    }
+    const timestamp = document.createElement("strong");
+    timestamp.textContent = formatReadingDate(book[field]);
+    item.append(header, timestamp);
+    readingHistoryList.append(item);
+  });
+}
+
+function formatReadingDate(value) {
+  if (!value) return "Nicht erfasst";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Nicht erfasst" : dateFormatter.format(date);
+}
+
+function applySeriesPayload(payload, seriesUrl, detailIdentity, attempt = 0) {
+  const status = payload.status || (payload.series ? "ready" : "no_series");
+  state.seriesData = payload.series;
+  state.seriesLoaded = true;
+  state.seriesStatus = status;
+  renderSeriesDetails();
+  if (status === "ready" || status === "no_series") {
+    clearTimeout(seriesPollTimer);
+    return;
+  }
+
+  seriesHeading.textContent = "Reihe wird im Hintergrund geladen";
+  seriesNote.textContent = status === "retry"
+    ? "Open Library war kurz nicht erreichbar. Ein neuer Versuch läuft automatisch."
+    : "Du kannst die App weiter benutzen. Diese Ansicht aktualisiert sich automatisch.";
+  scheduleSeriesPoll(seriesUrl, detailIdentity, attempt + 1);
+}
+
+function scheduleSeriesPoll(seriesUrl, detailIdentity, attempt) {
+  clearTimeout(seriesPollTimer);
+  // Dieser Request liest nur SQLite. Externe Wiederholungen übernimmt ausschließlich
+  // der Hintergrund-Worker, deshalb kann das geöffnete Fenster günstig weiter pollen.
+  const delay = Math.min(5000, 700 + attempt * 250);
+  seriesPollTimer = setTimeout(async () => {
+    if (!bookDialog.open || suggestionIdentity(state.detailBook || {}) !== detailIdentity) return;
+    try {
+      const payload = await api(seriesUrl);
+      if (!bookDialog.open || suggestionIdentity(state.detailBook || {}) !== detailIdentity) return;
+      applySeriesPayload(payload, seriesUrl, detailIdentity, attempt);
+    } catch (_error) {
+      scheduleSeriesPoll(seriesUrl, detailIdentity, attempt + 1);
+    }
+  }, delay);
+}
+
+function renderSeriesDetails() {
+  const series = state.seriesData;
+  seriesContent.classList.remove("series-loading");
+  seriesContent.replaceChildren();
+  seriesPosition.hidden = true;
+
+  if (!series) {
+    seriesHeading.textContent = "Keine Reihe gefunden";
+    const list = document.createElement("div");
+    list.className = "series-list";
+    if (state.detailBook) list.append(seriesBookRow(state.detailBook));
+    seriesContent.append(list);
+    seriesNote.textContent = "Bei manuell angelegten Büchern und einigen Open-Library-Einträgen fehlen diese Daten.";
+    return;
+  }
+
+  seriesHeading.textContent = series.name;
+  if (series.current_position) {
+    seriesPosition.textContent = `Band ${series.current_position}`;
+    seriesPosition.hidden = false;
+  }
+
+  const books = [...series.books];
+  const includesCurrent = books.some((book) =>
+    book.provider_book_id && book.provider_book_id === state.detailBook?.provider_book_id
+  );
+  if (!includesCurrent && state.detailBook) books.unshift(state.detailBook);
+  const list = document.createElement("div");
+  list.className = "series-list";
+  books.forEach((book) => list.append(seriesBookRow(book)));
+  seriesContent.append(list);
+
+  seriesNote.textContent = series.incomplete
+    ? "Hinweis: Diese Zuordnung stammt aus Schlagwörtern und kann unvollständig sein."
+    : "Reihendaten von Open Library. Einzelne Ausgaben oder Sonderbände können fehlen.";
+}
+
+function seriesBookRow(book) {
+  const isCurrent = book.provider_book_id === state.detailBook?.provider_book_id;
+  const saved = findCollectionBook(book);
+  const knownBook = saved || (isCurrent ? state.detailBook : null);
+  const displayBook = knownBook
+    ? { ...book, page_count: book.page_count || knownBook.page_count }
+    : book;
+  const row = document.createElement("div");
+  row.className = "series-book";
+  if (isCurrent) row.classList.add("current");
+  row.append(suggestionCover(book));
+
+  const copy = document.createElement("div");
+  copy.className = "series-book-copy";
+  const position = document.createElement("span");
+  position.className = "series-book-position";
+  position.textContent = book.series_position
+    ? `Band ${book.series_position}`
+    : (!state.seriesData && isCurrent ? "Dieses Buch" : "Reihenzuordnung");
+  const title = document.createElement("strong");
+  title.textContent = book.title;
+  const meta = document.createElement("span");
+  meta.textContent = [
+    authorText(displayBook),
+    displayBook.first_publish_year,
+    pageCountText(displayBook, "Seitenzahl unbekannt"),
+  ].filter(Boolean).join(" · ");
+  copy.append(position, title, meta);
+
+  row.append(copy, seriesBookActions(book));
+  return row;
+}
+
+function seriesBookActions(book) {
+  const actions = document.createElement("div");
+  actions.className = "series-book-actions";
+  const saved = findCollectionBook(book);
+  if (!saved) {
+    const select = statusSelect("want_to_read");
+    select.classList.add("series-status-select");
+    const add = document.createElement("button");
+    add.className = "button button-secondary series-book-action";
+    add.type = "button";
+    add.textContent = "Hinzufügen";
+    add.setAttribute("aria-label", `${book.title} zur Sammlung hinzufügen`);
+    add.addEventListener("click", () => addSeriesBook(book, select.value, add));
+    const review = document.createElement("button");
+    review.className = "collection-review-button series-review-button";
+    review.type = "button";
+    review.textContent = "☆";
+    review.title = "Direkt bewerten";
+    review.setAttribute("aria-label", `${book.title} direkt bewerten`);
+    review.addEventListener("click", () => openReview(book));
+    actions.append(select, add, review, createBookInfoButton(book, true));
+    return actions;
+  }
+
+  const select = statusSelect(saved.status);
+  select.classList.add("series-status-select");
+  select.addEventListener("change", async () => {
+    const previous = saved.status;
+    select.disabled = true;
+    try {
+      await api(`/api/books/${saved.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: select.value }),
+      });
+      await loadBooks();
+      showToast(`„${saved.title}“ ist jetzt in „${STATUS_LABELS[select.value]}“.`);
+    } catch (error) {
+      select.value = previous;
+      select.disabled = false;
+      showToast(`Nicht gespeichert: ${error.message}`, true);
+    }
+  });
+  const review = document.createElement("button");
+  review.className = "collection-review-button series-review-button";
+  if (saved.rating) review.classList.add("rated");
+  review.type = "button";
+  review.textContent = saved.rating ? `★ ${saved.rating}` : "☆";
+  review.title = saved.rating || saved.review ? "Bewertung bearbeiten" : "Buch bewerten";
+  review.setAttribute("aria-label", `${saved.title} bewerten`);
+  review.addEventListener("click", () => openReview(saved));
+  actions.append(select, review, createBookInfoButton(saved, true));
+  return actions;
+}
+
+async function addSeriesBook(book, status, button) {
+  button.disabled = true;
+  button.textContent = "Wird gespeichert …";
+  try {
+    await api("/api/books", {
+      method: "POST",
+      body: JSON.stringify({ ...book, status }),
+    });
+    await loadBooks();
+    showToast(`„${book.title}“ wurde zu „${STATUS_LABELS[status]}“ hinzugefügt.`);
+  } catch (error) {
+    if (error.status === 409) await loadBooks();
+    showToast(error.status === 409 ? "Dieses Buch ist bereits gespeichert." : `Nicht gespeichert: ${error.message}`, true);
+  }
+}
+
+function renderSearchResults() {
+  searchResults.replaceChildren();
+  if (!state.searchResults.length) {
+    const message = document.createElement("div");
+    message.className = "empty-state";
+    message.innerHTML = "<h3>Keine passenden Bücher gefunden</h3><p>Prüfe die Schreibweise oder lege das Buch selbst an.</p>";
+    const button = document.createElement("button");
+    button.className = "button button-primary";
+    button.type = "button";
+    button.textContent = "Buch selbst anlegen";
+    button.addEventListener("click", () => manualDialog.showModal());
+    message.append(button);
+    searchResults.append(message);
+    return;
+  }
+  state.searchResults.forEach((book) => searchResults.append(searchCard(book)));
+}
+
+function searchCard(book) {
+  const article = document.createElement("article");
+  article.className = "book-card search-card";
+  const cover = coverElement(book);
+  cover.classList.add("book-detail-trigger");
+  cover.tabIndex = 0;
+  cover.setAttribute("role", "button");
+  cover.setAttribute("aria-label", `Details und Reihe von ${book.title} anzeigen`);
+  cover.addEventListener("click", () => openBookDetails(book));
+  cover.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openBookDetails(book);
+    }
+  });
+  article.append(cover);
+  const body = document.createElement("div");
+  body.className = "book-body";
+  const meta = document.createElement("div");
+  meta.className = "book-meta";
+  const title = document.createElement("h3");
+  title.className = "book-title";
+  const titleButton = document.createElement("button");
+  titleButton.className = "book-title-link";
+  titleButton.type = "button";
+  titleButton.textContent = book.title;
+  titleButton.setAttribute("aria-label", `Details und Reihe von ${book.title} anzeigen`);
+  titleButton.addEventListener("click", () => openBookDetails(book));
+  title.append(titleButton);
+  const author = document.createElement("p");
+  author.className = "book-author";
+  author.textContent = authorText(book);
+  meta.append(title, author);
+  const publicationDetails = [
+    book.first_publish_year ? `Erstmals erschienen ${book.first_publish_year}` : "",
+    pageCountText(book, "Seitenzahl unbekannt"),
+  ].filter(Boolean);
+  if (publicationDetails.length) {
+    const year = document.createElement("p");
+    year.className = "book-year";
+    year.textContent = publicationDetails.join(" · ");
+    meta.append(year);
+  }
+  const heading = document.createElement("div");
+  heading.className = "book-card-heading";
+  heading.append(meta, createBookInfoButton(book));
+  body.append(heading);
+
+  if (isInCollection(book)) {
+    const added = document.createElement("div");
+    added.className = "added-label";
+    added.textContent = "✓ Bereits gespeichert";
+    body.append(added);
+  } else {
+    const select = statusSelect("want_to_read");
+    const add = document.createElement("button");
+    add.className = "button button-primary";
+    add.type = "button";
+    add.textContent = "Hinzufügen";
+    add.addEventListener("click", () => addSearchBook(book, select.value, add));
+    const actions = document.createElement("div");
+    actions.className = "card-actions";
+    actions.append(select, add);
+    body.append(actions);
+  }
+  article.append(body);
+  return article;
+}
+
+function isInCollection(candidate) {
+  return Boolean(findCollectionBook(candidate));
+}
+
+function findCollectionBook(candidate) {
+  if (!candidate) return null;
+  const identity = `${candidate.title}|${authorText(candidate)}`.toLocaleLowerCase("de");
+  return state.books.find((book) =>
+    (candidate.provider_book_id && book.provider_book_id === candidate.provider_book_id) ||
+    (candidate.isbn && book.isbn === candidate.isbn) ||
+    `${book.title}|${authorText(book)}`.toLocaleLowerCase("de") === identity
+  ) || null;
+}
+
+async function addSearchBook(book, status, button, fromSuggestions = false) {
+  button.disabled = true;
+  button.textContent = "Wird gespeichert …";
+  try {
+    await api("/api/books", { method: "POST", body: JSON.stringify({ ...book, status }) });
+    await loadBooks();
+    if (!searchPanel.hidden) renderSearchResults();
+    if (fromSuggestions && !searchSuggestions.hidden) renderSuggestions(state.suggestionQuery);
+    showToast(`„${book.title}“ wurde zur ${status === "want_to_read" ? "Wishlist" : "Sammlung"} hinzugefügt.`);
+  } catch (error) {
+    showToast(error.status === 409 ? "Dieses Buch ist bereits gespeichert." : `Nicht gespeichert: ${error.message}`, true);
+    if (error.status === 409) await loadBooks();
+    if (!searchPanel.hidden) renderSearchResults();
+    if (fromSuggestions && !searchSuggestions.hidden) renderSuggestions(state.suggestionQuery);
+  }
+}
+
+function deleteBook(book, button) {
+  pendingDelete = { book, button };
+  document.querySelector("#delete-dialog-title").textContent = `„${book.title}“ entfernen?`;
+  confirmDeleteButton.disabled = false;
+  confirmDeleteButton.textContent = "Buch entfernen";
+  deleteDialog.showModal();
+}
+
+async function confirmDelete() {
+  if (!pendingDelete) return;
+  const { book, button } = pendingDelete;
+  button.disabled = true;
+  confirmDeleteButton.disabled = true;
+  confirmDeleteButton.textContent = "Wird entfernt …";
+  try {
+    await api(`/api/books/${book.id}`, { method: "DELETE" });
+    await loadBooks();
+    renderSearchResults();
+    deleteDialog.close();
+    showToast(`„${book.title}“ wurde entfernt.`);
+  } catch (error) {
+    showToast(`Nicht entfernt: ${error.message}`, true);
+    button.disabled = false;
+    confirmDeleteButton.disabled = false;
+    confirmDeleteButton.textContent = "Buch entfernen";
+  }
+}
+
+function openReview(book) {
+  const form = document.querySelector("#review-form");
+  const saved = findCollectionBook(book);
+  const candidate = saved || book;
+  state.reviewCandidate = candidate;
+  form.reset();
+  form.elements.book_id.value = saved?.id || "";
+  form.elements.review.value = candidate.review || "";
+  if (candidate.rating) form.querySelector(`[name="rating"][value="${candidate.rating}"]`).checked = true;
+  document.querySelector("#review-book-title").textContent = candidate.title;
+  document.querySelector("#delete-review").hidden = !saved;
+  reviewDialog.showModal();
+}
+
+function updateCounts(visibleCount) {
+  const counts = { all: state.books.length, want_to_read: 0, reading: 0, read: 0 };
+  state.books.forEach((book) => { counts[book.status] += 1; });
+  for (const [key, value] of Object.entries(counts)) document.querySelector(`#count-${key}`).textContent = value;
+  const content = VIEW_CONTENT[state.filter];
+  document.querySelector("#library-heading").textContent = content.title;
+  document.querySelector("#empty-title").textContent = content.emptyTitle;
+  document.querySelector("#empty-copy").textContent = content.emptyCopy;
+  document.querySelector("#view-count").textContent = `${visibleCount} ${visibleCount === 1 ? "Buch" : "Bücher"}`;
+}
+
+async function loadBooks() {
+  const payload = await api("/api/books");
+  state.books = payload.books;
+  if (state.libraryMode === "series") await ensureSeriesIndex(state.books);
+  renderLibrary();
+  if (collectionDialog.open && state.activeSeriesKey) renderCollectionDialog(state.activeSeriesKey);
+  if (bookDialog.open && state.detailBook) {
+    state.detailBook = findCollectionBook(state.detailBook) || state.detailBook;
+    renderReadingHistory(state.detailBook);
+    if (state.seriesLoaded) renderSeriesDetails();
+  }
+}
+
+async function executeSearch(query) {
+  if (query.length < 2) return;
+  clearTimeout(suggestionTimer);
+  suggestionController?.abort();
+  hideSuggestions();
+  const button = searchForm.querySelector('[type="submit"]');
+  button.disabled = true;
+  button.textContent = "Suche …";
+  searchPanel.hidden = false;
+  searchResults.innerHTML = '<div class="loading-state">Open Library wird durchsucht …</div>';
+  searchPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  try {
+    state.searchResults = await cachedBookSearch(query);
+    renderSearchResults();
+  } catch (error) {
+    searchResults.replaceChildren();
+    const message = document.createElement("div");
+    message.className = "empty-state";
+    const heading = document.createElement("h3");
+    heading.textContent = "Die Suche ist gerade nicht verfügbar";
+    const copy = document.createElement("p");
+    copy.textContent = `${error.message} Es wurde nichts gespeichert.`;
+    message.append(heading, copy);
+    searchResults.append(message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Suchen";
+  }
+}
+
+searchForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  executeSearch(searchInput.value.trim());
+});
+
+searchInput.addEventListener("input", queueSuggestionSearch);
+searchInput.addEventListener("focus", () => {
+  const query = searchInput.value.trim();
+  if (query.length >= 3 && state.suggestionQuery === query) renderSuggestions(query);
+});
+searchInput.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !searchSuggestions.hidden) {
+    event.preventDefault();
+    hideSuggestions();
+    return;
+  }
+  if (searchSuggestions.hidden || !state.suggestions.length) return;
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    updateActiveSuggestion((activeSuggestionIndex + 1) % state.suggestions.length);
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    updateActiveSuggestion(activeSuggestionIndex <= 0 ? state.suggestions.length - 1 : activeSuggestionIndex - 1);
+  } else if (event.key === "Enter" && activeSuggestionIndex >= 0) {
+    event.preventDefault();
+    selectSuggestion(activeSuggestionIndex);
+  }
+});
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".search-box")) hideSuggestions();
+});
+
+document.querySelector("#manual-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submit = form.querySelector('[type="submit"]');
+  const data = Object.fromEntries(new FormData(form));
+  submit.disabled = true;
+  try {
+    await api("/api/books", { method: "POST", body: JSON.stringify(data) });
+    form.reset();
+    manualDialog.close();
+    await loadBooks();
+    showToast(`„${data.title}“ wurde gespeichert.`);
+  } catch (error) {
+    showToast(error.status === 409 ? "Dieses Buch ist bereits gespeichert." : `Nicht gespeichert: ${error.message}`, true);
+  } finally { submit.disabled = false; }
+});
+
+document.querySelector("#review-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = new FormData(form);
+  const submit = form.querySelector('[type="submit"]');
+  const rating = data.get("rating") ? Number(data.get("rating")) : null;
+  const review = String(data.get("review") || "").trim();
+  const saved = data.get("book_id") ? findCollectionBook(state.reviewCandidate) : null;
+  const hasReview = Boolean(rating || review);
+  if (!saved && !hasReview) {
+    showToast("Wähle Sterne oder schreibe einen Bewertungstext.", true);
+    return;
+  }
+  submit.disabled = true;
+  try {
+    if (saved) {
+      await api(`/api/books/${saved.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: hasReview ? "read" : saved.status,
+          rating,
+          review,
+        }),
+      });
+    } else {
+      await api("/api/books", {
+        method: "POST",
+        body: JSON.stringify({ ...state.reviewCandidate, status: "read", rating, review }),
+      });
+    }
+    reviewDialog.close();
+    await loadBooks();
+    showToast(
+      hasReview
+        ? "Deine Bewertung wurde gespeichert. Das Buch ist jetzt in der Bibliothek."
+        : "Die Bewertung wurde entfernt.",
+    );
+  } catch (error) {
+    showToast(`Nicht gespeichert: ${error.message}`, true);
+  } finally { submit.disabled = false; }
+});
+
+document.querySelector("#delete-review").addEventListener("click", async () => {
+  const form = document.querySelector("#review-form");
+  const button = document.querySelector("#delete-review");
+  button.disabled = true;
+  try {
+    await api(`/api/books/${form.elements.book_id.value}`, { method: "PATCH", body: JSON.stringify({ rating: null, review: "" }) });
+    reviewDialog.close();
+    await loadBooks();
+    showToast("Die Bewertung wurde gelöscht.");
+  } catch (error) {
+    showToast(`Nicht gelöscht: ${error.message}`, true);
+  } finally { button.disabled = false; }
+});
+
+confirmDeleteButton.addEventListener("click", confirmDelete);
+deleteDialog.addEventListener("close", () => {
+  if (pendingDelete?.button) pendingDelete.button.disabled = false;
+  pendingDelete = undefined;
+  confirmDeleteButton.disabled = false;
+  confirmDeleteButton.textContent = "Buch entfernen";
+});
+bookDialog.addEventListener("close", () => {
+  clearTimeout(seriesPollTimer);
+  clearTimeout(metadataPollTimer);
+  state.detailBook = null;
+  state.infoBook = null;
+  state.detailMetadataIdentity = null;
+  state.detailMetadata = null;
+  state.detailMetadataLoaded = false;
+  state.detailMetadataUnavailable = false;
+  state.descriptionExpanded = false;
+  state.seriesData = null;
+  state.seriesLoaded = false;
+  state.seriesStatus = null;
+  state.seriesRequestUrl = null;
+  setBookDialogView("main");
+});
+reviewDialog.addEventListener("close", () => {
+  state.reviewCandidate = null;
+  document.querySelector("#delete-review").hidden = false;
+});
+collectionDialog.addEventListener("close", () => {
+  state.activeSeriesKey = null;
+});
+
+document.querySelector(".clear-rating").addEventListener("click", () => {
+  document.querySelectorAll('[name="rating"]').forEach((radio) => { radio.checked = false; });
+});
+appearanceButton.addEventListener("click", () => setAppearanceMenu(appearanceMenu.hidden));
+themeOptions.forEach((option) => option.addEventListener("click", () => {
+  applyTheme(option.dataset.themeOption);
+  setAppearanceMenu(false);
+  appearanceButton.focus();
+}));
+document.querySelector("#open-settings").addEventListener("click", () => settingsDialog.showModal());
+settingsThemeSelect.addEventListener("change", () => applyTheme(settingsThemeSelect.value));
+settingsSearchLimitSelect.addEventListener("change", () => {
+  applySearchResultLimit(settingsSearchLimitSelect.value);
+  showToast(`Künftig werden ${state.searchResultLimit} Suchergebnisse angezeigt.`);
+});
+settingsStartViewSelect.addEventListener("change", () => applyStartView(settingsStartViewSelect.value));
+sortButton.addEventListener("click", () => setSortMenu(sortMenu.hidden));
+sortOptions.forEach((option) => option.addEventListener("click", () => {
+  applySort(option.dataset.sortOption);
+  setSortMenu(false);
+  sortButton.focus();
+}));
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".appearance-picker")) setAppearanceMenu(false);
+  if (!event.target.closest(".sort-picker")) setSortMenu(false);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !appearanceMenu.hidden) {
+    setAppearanceMenu(false);
+    appearanceButton.focus();
+  }
+  if (event.key === "Escape" && !sortMenu.hidden) {
+    setSortMenu(false);
+    sortButton.focus();
+  }
+});
+document.querySelector("#open-manual").addEventListener("click", () => manualDialog.showModal());
+document.querySelector("#empty-search").addEventListener("click", () => document.querySelector("#search-input").focus());
+document.querySelector("#close-search").addEventListener("click", () => { searchPanel.hidden = true; });
+bookDialogInfoButton.addEventListener("click", () => openBookInfo(state.detailBook));
+bookInfoBackButton.addEventListener("click", returnToBookDetails);
+document.querySelector("#book-description-toggle").addEventListener("click", () => {
+  state.descriptionExpanded = !state.descriptionExpanded;
+  updateDescriptionExpansion(state.detailMetadata?.description || "");
+});
+groupingButton.addEventListener("click", async () => {
+  groupingButton.disabled = true;
+  if (state.libraryMode === "series") {
+    clearTimeout(groupingPollTimer);
+    state.libraryMode = "all";
+    groupingButton.setAttribute("aria-pressed", "false");
+    groupingButtonLabel.textContent = "Reihen gruppieren";
+    renderLibrary();
+  } else {
+    state.libraryMode = "series";
+    groupingButton.setAttribute("aria-pressed", "true");
+    groupingButtonLabel.textContent = "Reihen werden geladen …";
+    grid.setAttribute("aria-busy", "true");
+    try {
+      // Die bestehende Bücherliste bleibt während des ersten Ladens stehen.
+      // Dadurch kollabiert die Seite nicht und die Scrollposition bleibt stabil.
+      await ensureSeriesIndex(state.books);
+      renderLibrary();
+    } finally {
+      grid.removeAttribute("aria-busy");
+      groupingButtonLabel.textContent = "Alle anzeigen";
+    }
+  }
+  groupingButton.disabled = false;
+});
+document.querySelectorAll(".dialog-close").forEach((button) => button.addEventListener("click", () => button.closest("dialog").close()));
+document.querySelectorAll("dialog").forEach((dialog) => dialog.addEventListener("click", (event) => {
+  if (event.target === dialog) dialog.close();
+}));
+document.querySelectorAll(".status-tab").forEach((button) => button.addEventListener("click", () => {
+  setLibraryFilter(button.dataset.filter);
+}));
+
+async function initializeApp() {
+  await loadAppConfig();
+  let storedTheme = appConfig.defaults.theme;
+  let storedSort = "added_desc";
+  let storedSearchLimit = appConfig.defaults.searchResultLimit;
+  let storedStartView = appConfig.defaults.startView;
+  try {
+    storedTheme = localStorage.getItem("bookypedia-theme") || storedTheme;
+    storedSort = localStorage.getItem("bookypedia-sort") || storedSort;
+    storedSearchLimit = localStorage.getItem("bookypedia-search-limit") || storedSearchLimit;
+    storedStartView = localStorage.getItem("bookypedia-start-view") || storedStartView;
+  } catch (_error) {}
+  applyTheme(storedTheme, false);
+  applySort(storedSort, false);
+  applySearchResultLimit(storedSearchLimit, false);
+  applyStartView(storedStartView, false);
+
+  try {
+    await loadBooks();
+  } catch (error) {
+    loadingState.textContent = `Die Sammlung konnte nicht geladen werden: ${error.message}`;
+    showToast("Keine Verbindung zur lokalen App.", true);
+  }
+}
+
+initializeApp();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("/service-worker.js"));
+}
+
