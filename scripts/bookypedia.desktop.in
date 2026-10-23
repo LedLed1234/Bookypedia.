@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Bookypedia
+GenericName=Leseverwaltung
+Comment=Bookypedia sicher über einen SSH-Tunnel öffnen
+Exec=@HOME@/.local/bin/bookypedia-open
+Icon=@HOME@/.local/share/icons/bookypedia.png
+Terminal=true
+Categories=Office;
+Keywords=Bücher;Lesen;Bibliothek;SSH;
+StartupNotify=true
+

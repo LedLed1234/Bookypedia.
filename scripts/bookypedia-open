@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+SSH_HOST="${BOOKYPEDIA_SSH_HOST:-bookypedia-vps}"
+LOCAL_PORT="${BOOKYPEDIA_LOCAL_PORT:-8000}"
+REMOTE_PORT="${BOOKYPEDIA_REMOTE_PORT:-8000}"
+BOOKYPEDIA_URL="${BOOKYPEDIA_URL:-http://bookypedia.localhost:${LOCAL_PORT}/}"
+
+if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+    RUNTIME_DIR="$XDG_RUNTIME_DIR"
+else
+    RUNTIME_DIR="/tmp/bookypedia-${UID}"
+    install -d -m 700 "$RUNTIME_DIR"
+fi
+
+CONTROL_SOCKET="${RUNTIME_DIR}/bookypedia-tunnel.sock"
+
+notify() {
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send "Bookypedia" "$1" >/dev/null 2>&1 || true
+    fi
+}
+
+fail() {
+    printf 'Bookypedia: %s\n' "$1" >&2
+    notify "$1"
+    if [[ -t 0 ]]; then
+        read -r -p "Zum Schließen Enter drücken …" _
+    fi
+    exit 1
+}
+
+if ! ssh -S "$CONTROL_SOCKET" -O check "$SSH_HOST" >/dev/null 2>&1; then
+    # Ein Socket kann nach einem Absturz übrig bleiben, obwohl kein Tunnel mehr läuft.
+    rm -f -- "$CONTROL_SOCKET"
+
+    printf 'Bookypedia: SSH-Tunnel wird aufgebaut …\n'
+    ssh \
+        -M \
+        -S "$CONTROL_SOCKET" \
+        -fNT \
+        -o ExitOnForwardFailure=yes \
+        -o ServerAliveInterval=30 \
+        -o ServerAliveCountMax=3 \
+        -L "127.0.0.1:${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}" \
+        "$SSH_HOST" \
+        || fail "Der SSH-Tunnel konnte nicht aufgebaut werden."
+fi
+
+ready=false
+for _ in {1..40}; do
+    if curl --fail --silent --show-error --max-time 1 \
+        "http://127.0.0.1:${LOCAL_PORT}/health" >/dev/null 2>&1; then
+        ready=true
+        break
+    fi
+    sleep 0.25
+done
+
+if [[ "$ready" != true ]]; then
+    ssh -S "$CONTROL_SOCKET" -O exit "$SSH_HOST" >/dev/null 2>&1 || true
+    fail "Der Tunnel steht, aber Bookypedia antwortet nicht."
+fi
+
+printf 'Bookypedia: bereit unter %s\n' "$BOOKYPEDIA_URL"
+
+cleanup() {
+    ssh -S "$CONTROL_SOCKET" -O exit "$SSH_HOST" >/dev/null 2>&1 || true
+}
+
+trap cleanup EXIT
+trap 'exit 0' INT TERM HUP
+
+if command -v firefox >/dev/null 2>&1; then
+    firefox --new-tab "$BOOKYPEDIA_URL" >/dev/null 2>&1 &
+elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$BOOKYPEDIA_URL" >/dev/null 2>&1 &
+else
+    fail "Kein Browser zum Öffnen der Seite gefunden."
+fi
+
+printf 'Dieses Fenster offen lassen. Mit Strg+C wird der SSH-Tunnel beendet.\n'
+while ssh -S "$CONTROL_SOCKET" -O check "$SSH_HOST" >/dev/null 2>&1; do
+    sleep 5
+done
+

@@ -1,3 +1,5 @@
+const IS_ANDROID_APP = document.documentElement.classList.contains("platform-android");
+
 const STATUS_LABELS = {
   want_to_read: "Wishlist",
   reading: "Lese gerade",
@@ -71,6 +73,7 @@ const state = {
   seriesIndexLoading: false,
   sort: "added_desc",
   searchResultLimit: 4,
+  readingHistoryExpanded: false,
 };
 const grid = document.querySelector("#book-grid");
 const emptyState = document.querySelector("#empty-state");
@@ -93,6 +96,7 @@ const sortMenu = document.querySelector("#sort-menu");
 const sortOptions = document.querySelectorAll("[data-sort-option]");
 const readingHistory = document.querySelector("#reading-history");
 const readingHistoryList = document.querySelector("#reading-history-list");
+const readingHistoryToggle = document.querySelector("#reading-history-toggle");
 const bookDialogMainView = document.querySelector("#book-dialog-main-view");
 const bookDialogInfoView = document.querySelector("#book-dialog-info-view");
 const bookDialogInfoButton = document.querySelector("#book-dialog-info");
@@ -680,6 +684,7 @@ function seriesCollectionCard(seriesKey, books) {
   const series = state.seriesIndex.get(books[0].id);
   const article = document.createElement("article");
   article.className = "book-card series-collection-card";
+  if (IS_ANDROID_APP) article.classList.add("android-open-card");
 
   const cover = document.createElement("div");
   cover.className = "book-cover-wrap series-cover-stack book-detail-trigger";
@@ -741,6 +746,12 @@ function seriesCollectionCard(seriesKey, books) {
   button.addEventListener("click", open);
   body.append(meta, button);
   article.append(cover, body);
+  if (IS_ANDROID_APP) {
+    article.addEventListener("click", (event) => {
+      if (event.target.closest("button, select, a, input, textarea, .book-detail-trigger")) return;
+      open();
+    });
+  }
   return article;
 }
 
@@ -843,6 +854,7 @@ function collectionBookRow(book) {
 function libraryCard(book) {
   const article = document.createElement("article");
   article.className = "book-card";
+  if (IS_ANDROID_APP) article.classList.add("android-open-card");
   const cover = coverElement(book);
   cover.classList.add("book-detail-trigger");
   cover.tabIndex = 0;
@@ -916,6 +928,12 @@ function libraryCard(book) {
   reviewButton.className = "button button-secondary";
   reviewButton.type = "button";
   reviewButton.textContent = book.rating || book.review ? "Bewertung bearbeiten" : "Bewerten";
+  if (book.rating) {
+    reviewButton.classList.add("rated");
+    reviewButton.dataset.rating = String(book.rating);
+  }
+  reviewButton.setAttribute("aria-label", `${book.title} bewerten`);
+  reviewButton.title = book.rating || book.review ? "Bewertung bearbeiten" : "Buch bewerten";
   reviewButton.addEventListener("click", () => openReview(book));
   const deleteButton = document.createElement("button");
   deleteButton.className = "icon-button";
@@ -928,6 +946,12 @@ function libraryCard(book) {
   actions.append(select, row);
   body.append(actions);
   article.append(body);
+  if (IS_ANDROID_APP) {
+    article.addEventListener("click", (event) => {
+      if (event.target.closest("button, select, a, input, textarea, .book-detail-trigger")) return;
+      openBookDetails(book);
+    });
+  }
   return article;
 }
 
@@ -1110,6 +1134,7 @@ async function openBookDetails(book, initialView = "main") {
   state.seriesData = null;
   state.seriesLoaded = false;
   state.seriesStatus = null;
+  state.readingHistoryExpanded = false;
   renderBookDialogHeader(detailBook);
   loadBookMetadata(detailBook, detailIdentity);
   setBookDialogView(initialView);
@@ -1144,6 +1169,8 @@ function renderReadingHistory(book) {
   readingHistory.hidden = !book?.id;
   if (!book?.id) return;
 
+  if (IS_ANDROID_APP) setReadingHistoryExpanded(state.readingHistoryExpanded);
+
   STATUS_HISTORY.forEach(({ status, field, label }) => {
     const item = document.createElement("div");
     item.className = "reading-milestone";
@@ -1166,6 +1193,23 @@ function renderReadingHistory(book) {
     item.append(header, timestamp);
     readingHistoryList.append(item);
   });
+}
+
+function setReadingHistoryExpanded(expanded) {
+  state.readingHistoryExpanded = Boolean(expanded);
+  if (!IS_ANDROID_APP) {
+    readingHistoryList.hidden = false;
+    return;
+  }
+  readingHistoryToggle.hidden = false;
+  readingHistoryList.hidden = !state.readingHistoryExpanded;
+  readingHistoryToggle.setAttribute("aria-expanded", String(state.readingHistoryExpanded));
+  readingHistoryToggle.querySelector("span:first-child").textContent = state.readingHistoryExpanded
+    ? "Einklappen"
+    : "Ausklappen";
+  readingHistoryToggle.querySelector(".reading-history-chevron").textContent = state.readingHistoryExpanded
+    ? "⌃"
+    : "⌄";
 }
 
 function formatReadingDate(value) {
@@ -1330,6 +1374,19 @@ function seriesBookActions(book) {
   review.setAttribute("aria-label", `${saved.title} bewerten`);
   review.addEventListener("click", () => openReview(saved));
   actions.append(select, review, createBookInfoButton(saved, true));
+  if (IS_ANDROID_APP && state.detailBook?.id === saved.id) {
+    const remove = document.createElement("button");
+    remove.className = "icon-button series-book-delete";
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.title = "Aus Sammlung entfernen";
+    remove.setAttribute("aria-label", `${saved.title} aus der Sammlung entfernen`);
+    remove.addEventListener("click", () => {
+      bookDialog.close();
+      deleteBook(saved, remove);
+    });
+    actions.append(remove);
+  }
   return actions;
 }
 
@@ -1669,6 +1726,101 @@ document.querySelector("#delete-review").addEventListener("click", async () => {
   } finally { button.disabled = false; }
 });
 
+let androidLockedScrollY = 0;
+
+function syncAndroidDialogScrollLock() {
+  if (!IS_ANDROID_APP) return;
+  const hasOpenDialog = [...document.querySelectorAll("dialog")].some((dialog) => dialog.open);
+  const root = document.documentElement;
+  const body = document.body;
+  const locked = root.classList.contains("dialog-scroll-locked");
+  if (hasOpenDialog && !locked) {
+    androidLockedScrollY = window.scrollY;
+    root.classList.add("dialog-scroll-locked");
+    body.style.position = "fixed";
+    body.style.top = `-${androidLockedScrollY}px`;
+    body.style.width = "100%";
+    return;
+  }
+  if (!hasOpenDialog && locked) {
+    root.classList.remove("dialog-scroll-locked");
+    body.style.position = "";
+    body.style.top = "";
+    body.style.width = "";
+    window.scrollTo(0, androidLockedScrollY);
+  }
+}
+
+function initializeAndroidInteractions() {
+  if (!IS_ANDROID_APP) return;
+
+  readingHistoryToggle.hidden = false;
+  readingHistoryToggle.addEventListener("click", () => {
+    setReadingHistoryExpanded(!state.readingHistoryExpanded);
+  });
+
+  const dialogObserver = new MutationObserver(syncAndroidDialogScrollLock);
+  document.querySelectorAll("dialog").forEach((dialog) => {
+    dialogObserver.observe(dialog, { attributes: true, attributeFilter: ["open"] });
+    dialog.addEventListener("close", syncAndroidDialogScrollLock);
+  });
+
+  const activationSelector = "button, a, select, [role='button'], .android-open-card";
+  let touchActivation = null;
+  let clearTouchActivationTimer;
+  const movementLimit = 10;
+  const holdLimit = 650;
+
+  document.addEventListener("pointerdown", (event) => {
+    if (event.pointerType !== "touch" || event.button !== 0) return;
+    const target = event.target.closest(activationSelector);
+    if (!target) return;
+    clearTimeout(clearTouchActivationTimer);
+    touchActivation = {
+      pointerId: event.pointerId,
+      target,
+      startedAt: Date.now(),
+      startX: event.clientX,
+      startY: event.clientY,
+      cancelled: false,
+    };
+  }, true);
+
+  document.addEventListener("pointermove", (event) => {
+    if (!touchActivation || event.pointerId !== touchActivation.pointerId) return;
+    const distance = Math.hypot(
+      event.clientX - touchActivation.startX,
+      event.clientY - touchActivation.startY,
+    );
+    if (distance > movementLimit) touchActivation.cancelled = true;
+  }, true);
+
+  document.addEventListener("pointercancel", (event) => {
+    if (!touchActivation || event.pointerId !== touchActivation.pointerId) return;
+    touchActivation.cancelled = true;
+    clearTouchActivationTimer = setTimeout(() => { touchActivation = null; }, 1000);
+  }, true);
+
+  document.addEventListener("pointerup", (event) => {
+    if (!touchActivation || event.pointerId !== touchActivation.pointerId) return;
+    if (Date.now() - touchActivation.startedAt > holdLimit) touchActivation.cancelled = true;
+    clearTouchActivationTimer = setTimeout(() => { touchActivation = null; }, 1000);
+  }, true);
+
+  document.addEventListener("click", (event) => {
+    if (!touchActivation) return;
+    const sameTarget = touchActivation.target === event.target || touchActivation.target.contains(event.target);
+    const heldTooLong = Date.now() - touchActivation.startedAt > holdLimit;
+    if (sameTarget && (touchActivation.cancelled || heldTooLong)) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    }
+    clearTimeout(clearTouchActivationTimer);
+    touchActivation = null;
+  }, true);
+}
+
 confirmDeleteButton.addEventListener("click", confirmDelete);
 deleteDialog.addEventListener("close", () => {
   if (pendingDelete?.button) pendingDelete.button.disabled = false;
@@ -1777,6 +1929,8 @@ document.querySelectorAll("dialog").forEach((dialog) => dialog.addEventListener(
 document.querySelectorAll(".status-tab").forEach((button) => button.addEventListener("click", () => {
   setLibraryFilter(button.dataset.filter);
 }));
+
+initializeAndroidInteractions();
 
 async function initializeApp() {
   await loadAppConfig();

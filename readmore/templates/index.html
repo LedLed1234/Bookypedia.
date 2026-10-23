@@ -6,6 +6,15 @@
   <meta name="theme-color" content="#101512">
   <meta name="description" content="Deine persönliche, lokale Leseverwaltung.">
   <title>Bookypedia. – Meine Leseliste</title>
+  <script>
+    try {
+      const isCapacitorAndroid = window.Capacitor?.getPlatform?.() === "android";
+      const isBookypediaAndroid = navigator.userAgent.includes("BookypediaAndroid");
+      if (isCapacitorAndroid || isBookypediaAndroid) {
+        document.documentElement.classList.add("platform-android");
+      }
+    } catch (_error) {}
+  </script>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
@@ -17,8 +26,8 @@
       }
     } catch (_error) {}
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=30">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=33"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=34">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=36"></script>
 </head>
 <body>
   <header class="site-header">
@@ -263,7 +272,12 @@
       </div>
       <div class="book-dialog-view" id="book-dialog-main-view">
         <section class="reading-history" id="reading-history" aria-labelledby="reading-history-heading" hidden>
-          <p class="eyebrow" id="reading-history-heading">Leseverlauf</p>
+          <div class="reading-history-heading-row">
+            <p class="eyebrow" id="reading-history-heading">Leseverlauf</p>
+            <button class="reading-history-toggle" id="reading-history-toggle" type="button" aria-controls="reading-history-list" aria-expanded="true" hidden>
+              <span>Ausklappen</span><span class="reading-history-chevron" aria-hidden="true">⌄</span>
+            </button>
+          </div>
           <div class="reading-history-list" id="reading-history-list"></div>
         </section>
         <section class="series-section" aria-labelledby="series-heading">

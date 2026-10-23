@@ -18,6 +18,11 @@ venv/
 *.key
 *.p12
 *.pfx
+*.jks
+*.keystore
+key.properties
+keystore.properties
+google-services.json
 **/.ssh/
 **/authorized_keys
 **/id_rsa*
@@ -49,4 +54,11 @@ compose.override.yaml
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Capacitor / Node
+node_modules/
+mobile/node_modules/
+mobile/.gradle/
+mobile/android/.gradle/
+mobile/android/local.properties
 

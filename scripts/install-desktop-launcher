@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname -- "$SCRIPT_DIR")"
+
+install -d -m 755 "$HOME/.local/bin"
+install -d -m 755 "$HOME/.local/share/applications"
+install -d -m 755 "$HOME/.local/share/icons"
+
+install -m 755 "$SCRIPT_DIR/bookypedia-open" "$HOME/.local/bin/bookypedia-open"
+install -m 644 "$PROJECT_DIR/readmore/static/icons/icon-512.png" \
+    "$HOME/.local/share/icons/bookypedia.png"
+
+temporary_file="$(mktemp)"
+trap 'rm -f -- "$temporary_file"' EXIT
+sed "s|@HOME@|$HOME|g" "$SCRIPT_DIR/bookypedia.desktop.in" >"$temporary_file"
+install -m 644 "$temporary_file" \
+    "$HOME/.local/share/applications/bookypedia.desktop"
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+fi
+
+printf 'Bookypedia-Starter installiert. Suche im Anwendungsmenü nach "Bookypedia".\n'
+

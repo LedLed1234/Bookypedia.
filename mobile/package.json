@@ -1,0 +1,20 @@
+{
+  "name": "bookypedia-mobile",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Android wrapper for the Bookypedia Flask application",
+  "scripts": {
+    "sync": "cap sync android",
+    "open": "cap open android",
+    "run": "./scripts/run-local-android.sh"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.4.3",
+    "@capacitor/core": "8.4.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.4.3",
+    "typescript": "5.9.3"
+  }
+}
