@@ -17,10 +17,20 @@ class OpenLibraryProvider(BookProvider):
 
     def search(self, query, limit=12):
         results = self._request(query, limit)
-        if results:
-            return results
-        fallback = self._request(_tolerant_prefix_query(query), max(12, limit * 3))
-        return _closest_results(query, fallback, limit)
+        # Open Library liefert für unvollständige Titel häufig beliebige
+        # Volltexttreffer, obwohl eine Präfixsuche den offensichtlichen Titel
+        # findet (z. B. "golden so" -> "Golden Son"). Nur wirklich nahe
+        # Direkttreffer dürfen deshalb den toleranten Fallback überspringen.
+        if any(_book_match_score(query, book) >= 2.5 for book in results):
+            return _closest_results(query, results, limit)
+        try:
+            fallback = self._request(_tolerant_prefix_query(query), max(12, limit * 3))
+        except ProviderUnavailable:
+            if results:
+                return _closest_results(query, results, limit)
+            raise
+        merged = _deduplicate_books([*fallback, *results])
+        return _closest_results(query, merged, limit)
 
     def suggest(self, query, limit=6):
         # Open Library korrigiert Tippfehler nicht selbst. Ein etwas kürzerer
@@ -222,16 +232,70 @@ def _closest_results(query, books, limit):
 
     def score(index):
         book = books[index]
-        title = _simple_normalize(book.get("title"))
-        similarity = SequenceMatcher(None, normalized_query, title).ratio()
-        starts_with = title.startswith(normalized_query)
-        return (starts_with, similarity, -index)
+        return (_book_match_score(normalized_query, book), -index)
 
     lead_index = max(range(len(books)), key=score)
     # Nur der beste Titel wird nach vorn gehoben. Die übrige Open-Library-
     # Reihenfolge bleibt erhalten, weil sie oft passende Reihen-Nachbarn enthält.
     ordered = [books[lead_index], *(book for index, book in enumerate(books) if index != lead_index)]
     return ordered[:limit]
+
+
+def _book_match_score(query, book):
+    normalized_query = _simple_normalize(query)
+    if not normalized_query:
+        return 0.0
+    authors = book.get("authors") or []
+    if isinstance(authors, str):
+        authors = [authors]
+    candidates = [book.get("title"), " ".join(authors), book.get("isbn")]
+    return max(
+        (_text_match_score(normalized_query, _simple_normalize(value)) for value in candidates),
+        default=0.0,
+    )
+
+
+def _text_match_score(query, candidate):
+    if not candidate:
+        return 0.0
+    if candidate == query:
+        return 4.0
+    similarity = SequenceMatcher(None, query, candidate).ratio()
+    if candidate.startswith(query):
+        return 3.0 + similarity
+    query_words = query.split()
+    candidate_words = candidate.split()
+    candidate_index = 0
+    ordered_prefix_match = bool(query_words)
+    for query_word in query_words:
+        while (
+            candidate_index < len(candidate_words)
+            and not candidate_words[candidate_index].startswith(query_word)
+        ):
+            candidate_index += 1
+        if candidate_index == len(candidate_words):
+            ordered_prefix_match = False
+            break
+        candidate_index += 1
+    if ordered_prefix_match:
+        return 2.5 + similarity
+    return similarity
+
+
+def _deduplicate_books(books):
+    result = []
+    seen = set()
+    for book in books:
+        identity = (
+            book.get("provider_book_id")
+            or book.get("isbn")
+            or (_simple_normalize(book.get("title")), tuple(book.get("authors") or []))
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        result.append(book)
+    return result
 
 
 def _simple_normalize(value):

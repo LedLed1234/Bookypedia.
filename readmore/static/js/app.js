@@ -1601,8 +1601,23 @@ async function loadBooks() {
   }
 }
 
+function canonicalSearchQuery(query) {
+  const normalizedQuery = normalizeSearch(query);
+  if (normalizedQuery.length < 4) return query;
+  const candidates = state.suggestions
+    .map((book) => ({ book, title: normalizeSearch(book.title) }))
+    .filter(({ title }) => title === normalizedQuery || title.startsWith(`${normalizedQuery} `))
+    .sort((left, right) => fuzzyBookScore(right.book, query) - fuzzyBookScore(left.book, query));
+  if (!candidates.length) return query;
+  const best = candidates[0];
+  const isNearlyComplete = editDistance(normalizedQuery, best.title) <= 2;
+  const hasPartialLastWord = normalizedQuery.includes(" ");
+  return isNearlyComplete || hasPartialLastWord ? best.book.title : query;
+}
+
 async function executeSearch(query) {
   if (query.length < 2) return;
+  const providerQuery = canonicalSearchQuery(query);
   clearTimeout(suggestionTimer);
   suggestionController?.abort();
   hideSuggestions();
@@ -1613,7 +1628,7 @@ async function executeSearch(query) {
   searchResults.innerHTML = '<div class="loading-state">Open Library wird durchsucht …</div>';
   searchPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   try {
-    state.searchResults = await cachedBookSearch(query);
+    state.searchResults = await cachedBookSearch(providerQuery);
     renderSearchResults();
   } catch (error) {
     searchResults.replaceChildren();

@@ -363,6 +363,83 @@ def test_open_library_typo_search_uses_tolerant_prefix_fallback(monkeypatch):
     ]
 
 
+def test_open_library_search_retries_when_direct_results_are_unrelated(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.open_library")
+    provider = provider_module.OpenLibraryProvider()
+    calls = []
+
+    def fake_request(query, limit):
+        calls.append((query, limit))
+        if query == "golden so":
+            return [
+                {"title": "Wings So Wicked", "authors": ["Emily Blackwood"]},
+                {
+                    "title": "I Was So Mad (Golden Look-Look Books)",
+                    "authors": ["Mercer Mayer"],
+                },
+            ]
+        return [
+            {
+                "title": "Golden Son",
+                "authors": ["Pierce Brown"],
+                "provider_book_id": "/works/OL2W",
+            },
+            {
+                "title": "Red Rising",
+                "authors": ["Pierce Brown"],
+                "provider_book_id": "/works/OL1W",
+            },
+        ]
+
+    monkeypatch.setattr(provider, "_request", fake_request)
+
+    results = provider.search("golden so", limit=4)
+
+    assert results[0]["title"] == "Golden Son"
+    assert [book["title"] for book in results] == [
+        "Golden Son",
+        "Red Rising",
+        "Wings So Wicked",
+        "I Was So Mad (Golden Look-Look Books)",
+    ]
+    assert calls == [
+        ("golden so", 4),
+        ("title:(golden AND so*) OR author:(golden AND so*) OR isbn:(golden AND so*)", 12),
+    ]
+
+
+def test_open_library_close_direct_match_avoids_second_request(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.open_library")
+    provider = provider_module.OpenLibraryProvider()
+    calls = []
+    monkeypatch.setattr(
+        provider,
+        "_request",
+        lambda query, limit: calls.append((query, limit))
+        or [{"title": "Golden Son", "authors": ["Pierce Brown"]}],
+    )
+
+    assert provider.search("Golden Son", limit=4)[0]["title"] == "Golden Son"
+    assert calls == [("Golden Son", 4)]
+
+
+def test_open_library_keeps_direct_results_when_fallback_times_out(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.open_library")
+    provider = provider_module.OpenLibraryProvider()
+    calls = []
+
+    def fake_request(query, limit):
+        calls.append((query, limit))
+        if len(calls) == 2:
+            raise provider_module.ProviderUnavailable("Timeout")
+        return [{"title": "Wings So Wicked", "authors": ["Emily Blackwood"]}]
+
+    monkeypatch.setattr(provider, "_request", fake_request)
+
+    assert provider.search("golden so", limit=4)[0]["title"] == "Wings So Wicked"
+    assert len(calls) == 2
+
+
 def test_exact_search_prioritizes_books_from_same_series(client, monkeypatch):
     api_module = importlib.import_module("readmore.api")
     cache_module = importlib.import_module("readmore.series_cache")
