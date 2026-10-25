@@ -1,4 +1,4 @@
-const CACHE_NAME = "bookypedia-shell-v35";
+const CACHE_NAME = "bookypedia-shell-v36";
 const SHELL = [
   "/static/css/app.css?v=35",
   "/static/js/app.js?v=37",
@@ -19,19 +19,34 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET" || new URL(event.request.url).pathname.startsWith("/api/")) return;
+  const requestUrl = new URL(event.request.url);
+  // Fremde Ressourcen wie Open-Library-Cover gehören nicht in unseren App-
+  // Cache. Bei einem Fehler müsste respondWith sonst eine fehlende Response
+  // zurückgeben und der Browser verwirft das Bild vollständig.
+  if (
+    event.request.method !== "GET" ||
+    requestUrl.origin !== self.location.origin ||
+    requestUrl.pathname.startsWith("/api/")
+  ) return;
   if (event.request.mode === "navigate") {
     event.respondWith(fetch(event.request));
     return;
   }
   event.respondWith(
     fetch(event.request)
-      .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+      .then(async (response) => {
+        if (response.ok && response.type === "basic") {
+          const copy = response.clone();
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(event.request, copy);
+        }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(async (error) => {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        throw error;
+      })
   );
 });
 
