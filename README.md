@@ -2,7 +2,7 @@
 
 ![](/home/led/.config/marktext/images/2026-10-23-16-36-33-image.png)
 
-Eine persönliche, deutschsprachige Leseverwaltung mit Flask, SQLite und der Open-Library-Suche. Die App läuft lokal per Docker; deine Sammlung liegt dauerhaft in einem Docker-Volume.
+Eine deutschsprachige Leseverwaltung mit Flask, SQLite und der Open-Library-Suche. Die App läuft lokal per Docker; jedes manuell freigeschaltete Konto besitzt eine eigene Bibliothek im persistenten Docker-Volume.
 
 Bücher und bereits ermittelte Reihen werden gemeinsam in SQLite gespeichert. Neue Bücher sind sofort verfügbar; die zugehörige Reihe lädt ein Hintergrund-Worker unabhängig von der Bedienoberfläche nach. Vorhandene Bücher ohne Reiheninformationen werden beim nächsten App-Start automatisch ergänzt. Vorübergehende Fehler bei Open Library werden mit wachsendem Zeitabstand erneut versucht.
 
@@ -15,6 +15,17 @@ docker compose up --build
 ```
 
 Danach im Browser **http://localhost:5000** öffnen. Der Quellcode ist als Bind-Mount eingebunden; Änderungen laden den Flask-Entwicklungsserver automatisch neu.
+
+Vor der ersten Anmeldung einmalig ein Konto anlegen:
+
+```bash
+docker compose exec app flask --app run.py user create led
+```
+
+Das vorläufige Passwort wird verdeckt abgefragt und muss beim ersten Login
+geändert werden. Beim Upgrade von einer früheren Einbenutzer-Version werden
+alle bereits vorhandenen Bücher automatisch dem zuerst angelegten Konto
+zugeordnet.
 
 ## Android-App lokal testen
 
@@ -34,9 +45,9 @@ aktiviert und die Verbindung zu diesem PC bestätigt werden. Das Startskript
 richtet über ADB eine lokale Portweiterleitung ein, synchronisiert Capacitor und
 installiert die App. Weitere Hinweise stehen in `mobile/README.md`.
 
-Die Android-Konfiguration erlaubt vorübergehend unverschlüsseltes HTTP zu
-`localhost:5000`. Das ist ausschließlich für die lokale Entwicklung vorgesehen
-und wird vor der Verbindung mit dem VPS durch HTTPS und Geräteanmeldung ersetzt.
+Die Android-Konfiguration erlaubt unverschlüsseltes HTTP ausschließlich zu
+`localhost:8000`. Für den VPS wird beim Build die HTTPS-Domain gesetzt; Login
+und Bibliothekstrennung funktionieren anschließend identisch zum Browser.
 
 Im Hintergrund starten:
 
@@ -94,15 +105,71 @@ LOG_LEVEL=DEBUG docker compose up
 
 Mit `LOG_FORMAT=text` kann lokal statt JSON ein kompakteres Textformat verwendet werden. Logs enthalten technische IDs, Statuswerte und Laufzeiten, aber keine Suchbegriffe, Buchtitel, ISBNs oder Bewertungstexte. Jede HTTP-Antwort enthält außerdem eine `X-Request-ID`, über die sich ein Fehler im Log wiederfinden lässt.
 
-## Produktionsvorbereitung
+## Konten verwalten
 
-Eine getrennte Compose-Datei startet die App ohne Debug-Modus mit Gunicorn und bindet sie lokal an Port 8000:
+Es gibt bewusst keine öffentliche Registrierung. Konten werden ausschließlich
+auf dem Server verwaltet:
+
+```bash
+docker compose exec app flask --app run.py user list
+docker compose exec app flask --app run.py user create freund
+docker compose exec app flask --app run.py user reset-password freund
+docker compose exec app flask --app run.py user deactivate freund
+docker compose exec app flask --app run.py user activate freund
+```
+
+Passwörter werden nicht als Kommandozeilenargument übergeben und mit scrypt
+gehasht gespeichert. Ein Reset oder das Deaktivieren eines Kontos macht
+vorhandene Sitzungen ungültig. Reihen- und Katalogmetadaten werden gemeinsam
+gecached; Lesestatus, Bewertungen und Notizen sind pro Konto getrennt.
+
+## Produktion über den bisherigen SSH-Zugang
+
+Zuerst eine lokale `.env` auf dem VPS anlegen:
+
+```bash
+cp .env.example .env
+openssl rand -hex 32
+```
+
+Den ausgegebenen Wert in `.env` als `SECRET_KEY` eintragen. Die Datei wird durch
+`.gitignore` nicht versioniert. Danach startet die getrennte Compose-Datei die
+App ohne Debug-Modus mit Gunicorn und bindet sie lokal an Port 8000:
 
 ```bash
 docker compose -f compose.prod.yaml up --build -d
 ```
 
-Für einen öffentlich erreichbaren VPS müssen davor ein HTTPS-Reverse-Proxy und ein Zugangsschutz ergänzt werden. Die Produktionskonfiguration veröffentlicht Gunicorn bewusst nur auf `127.0.0.1`; sie ist für einen vorgeschalteten Proxy gedacht.
+Die Anwendung besitzt jetzt einen Zugangsschutz; Gunicorn bleibt trotzdem
+bewusst nur an `127.0.0.1` gebunden. Ohne die öffentliche Caddy-Konfiguration
+ist Bookypedia weiterhin ausschließlich über den bisherigen SSH-Tunnel erreichbar.
+
+## Öffentlich mit Domain und HTTPS betreiben
+
+Voraussetzungen:
+
+- eine Domain oder Subdomain mit A/AAAA-Eintrag auf den VPS,
+- von außen erreichbare TCP-Ports 80 und 443 sowie UDP-Port 443,
+- `BOOKYPEDIA_DOMAIN` und ein zufälliger `SECRET_KEY` in `.env`.
+
+Dann Gunicorn und den Caddy-Reverse-Proxy gemeinsam starten:
+
+```bash
+docker compose -f compose.prod.yaml -f compose.public.yaml up --build -d
+```
+
+Caddy beantragt und erneuert das TLS-Zertifikat automatisch. Buchsuche und
+sämtliche privaten Bibliotheks-APIs erfordern ein aktives Konto; öffentlich
+bleiben nur Anmeldung, statische App-Dateien und der technische Healthcheck.
+Danach das erste Konto anlegen:
+
+```bash
+docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+  flask --app run.py user create led
+```
+
+Weitere Personen erhalten auf dieselbe Weise eigene Konten. Eine öffentliche
+Registrierung und E-Mail-Funktionen sind nicht vorhanden.
 
 ## Bookypedia auf dem VPS aktualisieren
 
@@ -111,21 +178,24 @@ Der Produktionscode liegt auf dem VPS unter `/opt/bookypedia`. Nach einem Push a
 ```bash
 cd /opt/bookypedia
 git pull --ff-only
-docker compose -f compose.prod.yaml up --build -d
+docker compose -f compose.prod.yaml -f compose.public.yaml up --build -d
 ```
 
 Anschließend Status und aktuelle Logs kontrollieren:
 
 ```bash
-docker compose -f compose.prod.yaml ps
-docker compose -f compose.prod.yaml logs --tail=100 app
+docker compose -f compose.prod.yaml -f compose.public.yaml ps
+docker compose -f compose.prod.yaml -f compose.public.yaml logs --tail=100 app caddy
 ```
 
 `git pull` aktualisiert nur den Anwendungscode. Die SQLite-Datenbank liegt dauerhaft im benannten Docker-Volume `readmore_prod_data` und bleibt bei Neubauten und Container-Neustarts erhalten. Weder `docker compose down -v` noch `docker volume rm` verwenden, wenn die gespeicherte Sammlung erhalten bleiben soll.
 
-## Lokaler Desktop-Starter über SSH
+## Optionaler Desktop-Starter über SSH
 
-Unter Linux kann Bookypedia ohne öffentlich freigegebenen Web-Port über einen SSH-Tunnel geöffnet werden. Voraussetzung ist der SSH-Konfigurationseintrag `bookypedia-vps`. Den Starter installieren mit:
+Solange noch keine öffentliche HTTPS-Domain eingerichtet ist, kann Bookypedia
+unter Linux weiterhin über einen SSH-Tunnel geöffnet werden. Nach Aktivierung
+der HTTPS-Domain wird dieser Starter nicht mehr benötigt. Voraussetzung ist der
+SSH-Konfigurationseintrag `bookypedia-vps`. Den Starter installieren mit:
 
 ```bash
 ./scripts/install-desktop-launcher

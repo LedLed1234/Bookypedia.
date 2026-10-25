@@ -7,7 +7,7 @@ from threading import Lock
 from time import monotonic
 from time import time
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
 from .db import get_db
 from .metadata_cache import enqueue_metadata_lookup, metadata_lookup_status
@@ -36,6 +36,14 @@ SEARCH_CACHE_MAX_ENTRIES = 128
 METADATA_CACHE_TTL = 180 * 24 * 60 * 60
 _SEARCH_CACHE = OrderedDict()
 _SEARCH_CACHE_LOCK = Lock()
+
+
+@api.before_request
+def require_authenticated_user():
+    if g.user is None:
+        return jsonify(error="Bitte melde dich an."), 401
+    if g.user["password_change_required"]:
+        return jsonify(error="Bitte ändere zuerst dein vorläufiges Passwort."), 403
 
 
 def normalize_isbn(value):
@@ -133,6 +141,7 @@ def _cached_book_metadata(db, provider_book_id, provider_edition_id=None):
 
 def serialize_book(row):
     book = dict(row)
+    book.pop("user_id", None)
     book["authors"] = [author.strip() for author in book["authors"].split(",") if author.strip()]
     book["original_authors"] = [
         author.strip() for author in book.get("original_authors", "").split(",") if author.strip()
@@ -274,17 +283,32 @@ def list_books():
     db = get_db()
     if status:
         rows = db.execute(
-            "SELECT * FROM books WHERE status = ? ORDER BY updated_at DESC, id DESC", (status,)
+            """
+            SELECT * FROM books
+            WHERE user_id = ? AND status = ?
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (g.user["id"], status),
         ).fetchall()
     else:
-        rows = db.execute("SELECT * FROM books ORDER BY updated_at DESC, id DESC").fetchall()
+        rows = db.execute(
+            """
+            SELECT * FROM books
+            WHERE user_id = ?
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (g.user["id"],),
+        ).fetchall()
     return jsonify(books=[serialize_book(row) for row in rows])
 
 
 @api.get("/books/<int:book_id>/series")
 def book_series(book_id):
     db = get_db()
-    row = db.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
+    row = db.execute(
+        "SELECT * FROM books WHERE id = ? AND user_id = ?",
+        (book_id, g.user["id"]),
+    ).fetchone()
     if row is None:
         return validation_error("Buch nicht gefunden.", 404)
     book = serialize_book(row)
@@ -302,7 +326,10 @@ def book_series(book_id):
 @api.get("/books/<int:book_id>/metadata")
 def saved_book_metadata(book_id):
     db = get_db()
-    row = db.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
+    row = db.execute(
+        "SELECT * FROM books WHERE id = ? AND user_id = ?",
+        (book_id, g.user["id"]),
+    ).fetchone()
     if row is None:
         return validation_error("Buch nicht gefunden.", 404)
     book = serialize_book(row)
@@ -395,7 +422,7 @@ def create_book():
     key = identity_key(title, authors)
     db = get_db()
 
-    duplicate = _find_duplicate(db, isbn, provider_book_id, key)
+    duplicate = _find_duplicate(db, g.user["id"], isbn, provider_book_id, key)
     if duplicate:
         return jsonify(error="Dieses Buch ist bereits in deiner Sammlung.", book=serialize_book(duplicate)), 409
 
@@ -404,15 +431,16 @@ def create_book():
         cursor = db.execute(
             f"""
             INSERT INTO books (
-                title, authors, isbn, provider_book_id, provider_edition_id,
+                user_id, title, authors, isbn, provider_book_id, provider_edition_id,
                 cover_url, original_title, original_authors, language, page_count,
                 publisher, publish_date, description, physical_format, subtitle,
                 subjects_json, identity_key, status, rating, review,
                 {status_timestamp_column}
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
+                g.user["id"],
                 title,
                 authors,
                 isbn,
@@ -438,7 +466,10 @@ def create_book():
         db.commit()
     except sqlite3.IntegrityError:
         return validation_error("Dieses Buch ist bereits in deiner Sammlung.", 409)
-    row = db.execute("SELECT * FROM books WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    row = db.execute(
+        "SELECT * FROM books WHERE id = ? AND user_id = ?",
+        (cursor.lastrowid, g.user["id"]),
+    ).fetchone()
     if provider_book_id:
         enqueue_metadata_lookup(
             db,
@@ -457,6 +488,7 @@ def create_book():
         extra={
             "event": "book_created",
             "book_id": row["id"],
+            "user_id": g.user["id"],
             "provider": current_app.config["BOOK_PROVIDER"] if provider_book_id else "manual",
         },
     )
@@ -471,7 +503,10 @@ def update_book(book_id):
         return validation_error("Die übermittelten Änderungen sind ungültig.")
 
     db = get_db()
-    existing = db.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
+    existing = db.execute(
+        "SELECT * FROM books WHERE id = ? AND user_id = ?",
+        (book_id, g.user["id"]),
+    ).fetchone()
     if existing is None:
         return validation_error("Buch nicht gefunden.", 404)
 
@@ -513,19 +548,28 @@ def update_book(book_id):
     if not updates:
         return jsonify(book=serialize_book(existing))
 
-    values.append(book_id)
+    values.extend((book_id, g.user["id"]))
     cursor = db.execute(
-        f"UPDATE books SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE id = ?", values
+        f"""
+        UPDATE books
+        SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND user_id = ?
+        """,
+        values,
     )
     if cursor.rowcount == 0:
         return validation_error("Buch nicht gefunden.", 404)
     db.commit()
-    row = db.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
+    row = db.execute(
+        "SELECT * FROM books WHERE id = ? AND user_id = ?",
+        (book_id, g.user["id"]),
+    ).fetchone()
     current_app.logger.info(
         "Buch aktualisiert",
         extra={
             "event": "book_updated",
             "book_id": book_id,
+            "user_id": g.user["id"],
             "changed_fields": ",".join(sorted(changed_fields)),
         },
     )
@@ -535,18 +579,21 @@ def update_book(book_id):
 @api.delete("/books/<int:book_id>")
 def delete_book(book_id):
     db = get_db()
-    cursor = db.execute("DELETE FROM books WHERE id = ?", (book_id,))
+    cursor = db.execute(
+        "DELETE FROM books WHERE id = ? AND user_id = ?",
+        (book_id, g.user["id"]),
+    )
     if cursor.rowcount == 0:
         return validation_error("Buch nicht gefunden.", 404)
     db.commit()
     current_app.logger.info(
         "Buch entfernt",
-        extra={"event": "book_deleted", "book_id": book_id},
+        extra={"event": "book_deleted", "book_id": book_id, "user_id": g.user["id"]},
     )
     return "", 204
 
 
-def _find_duplicate(db, isbn, provider_book_id, key):
+def _find_duplicate(db, user_id, isbn, provider_book_id, key):
     conditions = ["identity_key = ?"]
     values = [key]
     if isbn:
@@ -556,6 +603,7 @@ def _find_duplicate(db, isbn, provider_book_id, key):
         conditions.append("provider_book_id = ?")
         values.append(provider_book_id)
     return db.execute(
-        f"SELECT * FROM books WHERE {' OR '.join(conditions)} LIMIT 1", values
+        f"SELECT * FROM books WHERE user_id = ? AND ({' OR '.join(conditions)}) LIMIT 1",
+        [user_id, *values],
     ).fetchone()
 

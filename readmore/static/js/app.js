@@ -266,10 +266,21 @@ function applyTheme(theme, persist = true) {
 }
 
 async function api(url, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && csrfToken) {
+    headers["X-CSRF-Token"] = csrfToken;
+  }
   const response = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options,
+    headers,
+    credentials: "same-origin",
   });
+  if (response.status === 401) {
+    window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+    throw new Error("Bitte melde dich erneut an.");
+  }
   const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(payload?.error || "Die Anfrage ist fehlgeschlagen.");

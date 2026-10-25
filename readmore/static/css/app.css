@@ -320,12 +320,36 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .settings-dialog { width: min(590px, calc(100% - 28px)); border: 1px solid var(--theme-border); }
 .settings-dialog-shell { gap: 20px; }
 .settings-list { display: grid; gap: 9px; }
+.settings-account { display: flex; align-items: center; gap: 12px; padding: 13px 14px; background: var(--soft-tint); border: 1px solid var(--theme-border); border-radius: 11px; }
+.settings-account > span:last-child { min-width: 0; display: grid; gap: 2px; }
+.settings-account strong { overflow: hidden; font-size: .9rem; text-overflow: ellipsis; white-space: nowrap; }
+.settings-account small { color: var(--muted); font-size: .72rem; }
+.settings-account-avatar { width: 38px; height: 38px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent-ink); background: var(--accent); border-radius: 50%; font-size: .9rem; font-weight: 900; }
 .dialog .settings-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(145px, 180px); align-items: center; gap: 18px; padding: 14px; color: var(--text); background: var(--soft-tint); border: 1px solid var(--theme-border); border-radius: 11px; }
 .settings-item > span { min-width: 0; display: grid; gap: 3px; }
 .settings-item strong { font-size: .88rem; }
 .settings-item small { color: var(--muted); font-size: .72rem; font-weight: 500; line-height: 1.4; }
 .settings-item select { width: 100%; padding: 9px 10px; color: var(--text); background: var(--surface-tint); border: 1px solid var(--theme-border); border-radius: 8px; font-size: .8rem; font-weight: 700; }
 .settings-note { margin: -3px 0 0; color: var(--muted); font-size: .72rem; }
+.account-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; border-top: 1px solid var(--theme-border); }
+.account-actions form { margin: 0; }
+
+.auth-page { min-height: 100vh; }
+.auth-shell { width: min(460px, calc(100% - 32px)); min-height: 100vh; display: grid; align-content: center; gap: 22px; margin: 0 auto; padding: 48px 0; }
+.auth-brand { width: max-content; color: var(--text); text-decoration: none; font-size: 1.2rem; font-weight: 900; letter-spacing: -.03em; }
+.auth-card { display: grid; gap: 24px; padding: clamp(24px, 7vw, 38px); background: var(--surface-tint); border: 1px solid var(--theme-border); border-radius: 18px; box-shadow: var(--shadow); }
+.auth-heading h1 { margin: 0 0 10px; font-size: clamp(1.8rem, 8vw, 2.45rem); }
+.auth-heading > p:last-child { margin: 0; color: var(--muted); font-size: .9rem; }
+.auth-form { display: grid; gap: 16px; }
+.auth-form label { display: grid; gap: 7px; color: var(--muted); font-size: .8rem; font-weight: 750; }
+.auth-form label small { color: var(--muted); font-size: .7rem; font-weight: 500; }
+.auth-form input { min-height: 46px; }
+.auth-submit { width: 100%; min-height: 48px; margin-top: 2px; }
+.auth-message { padding: 11px 13px; border: 1px solid var(--theme-border); border-radius: 10px; font-size: .8rem; }
+.auth-message.error { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface-tint)); border-color: color-mix(in srgb, var(--danger) 45%, var(--theme-border)); }
+.auth-help { margin: -5px 0 0; color: var(--muted); font-size: .72rem; text-align: center; }
+.auth-back { color: var(--accent); font-size: .78rem; font-weight: 750; text-decoration: none; }
+.auth-back:hover { text-decoration: underline; text-underline-offset: 3px; }
 .book-dialog { width: min(680px, calc(100% - 28px)); overflow-y: auto; border: 1px solid var(--theme-border); }
 .book-dialog-shell { gap: 22px; }
 .book-dialog-header-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }

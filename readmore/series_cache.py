@@ -117,9 +117,14 @@ def get_cached_series(db, provider_book_id, provider=PROVIDER_NAME):
         return None, "missing"
     members = db.execute(
         """
-        SELECT sm.*, COALESCE(sm.page_count, b.page_count) AS resolved_page_count
+        SELECT sm.*,
+               COALESCE(
+                   sm.page_count,
+                   (SELECT MAX(b.page_count)
+                    FROM books b
+                    WHERE b.provider_book_id = sm.provider_book_id)
+               ) AS resolved_page_count
         FROM series_members sm
-        LEFT JOIN books b ON b.provider_book_id = sm.provider_book_id
         WHERE sm.series_id = ?
         ORDER BY sm.sort_order, sm.provider_book_id
         """,

@@ -6,8 +6,22 @@ from .text import identity_key
 
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    display_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    password_change_required INTEGER NOT NULL DEFAULT 1
+        CHECK (password_change_required IN (0, 1)),
+    auth_version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS books (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     authors TEXT NOT NULL DEFAULT '',
     isbn TEXT,
@@ -35,13 +49,6 @@ CREATE TABLE IF NOT EXISTS books (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_books_isbn
-    ON books(isbn) WHERE isbn IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_books_provider_book_id
-    ON books(provider_book_id) WHERE provider_book_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_books_identity_key
-    ON books(identity_key);
 
 CREATE TABLE IF NOT EXISTS series (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -123,6 +130,14 @@ CREATE TABLE IF NOT EXISTS metadata_lookups (
 
 CREATE INDEX IF NOT EXISTS idx_metadata_lookups_queue
     ON metadata_lookups(status, next_attempt_at);
+
+CREATE TABLE IF NOT EXISTS login_attempts (
+    throttle_key TEXT PRIMARY KEY,
+    failures INTEGER NOT NULL DEFAULT 0,
+    window_started_at INTEGER NOT NULL,
+    blocked_until INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -150,6 +165,7 @@ def init_db():
     # ALTER TABLE ergänzt bestehende Installationen, ohne unbekannte historische
     # Zeitpunkte aus created_at oder updated_at abzuleiten.
     migrations = {
+        "user_id": "INTEGER REFERENCES users(id) ON DELETE CASCADE",
         "want_to_read_at": "TEXT",
         "reading_at": "TEXT",
         "read_at": "TEXT",
@@ -168,6 +184,37 @@ def init_db():
     for column, definition in migrations.items():
         if column not in columns:
             db.execute(f"ALTER TABLE books ADD COLUMN {column} {definition}")
+
+    # Frühere Versionen behandelten die App als eine einzige globale Sammlung.
+    # Ab jetzt gelten Duplikate pro Benutzer. Noch nicht zugeordnete Altbestände
+    # bleiben bis zur Anlage des ersten Kontos erhalten und sind nicht sichtbar.
+    db.execute("DROP INDEX IF EXISTS idx_books_isbn")
+    db.execute("DROP INDEX IF EXISTS idx_books_provider_book_id")
+    db.execute("DROP INDEX IF EXISTS idx_books_identity_key")
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_books_user_isbn
+        ON books(user_id, isbn)
+        WHERE user_id IS NOT NULL AND isbn IS NOT NULL
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_books_user_provider_book
+        ON books(user_id, provider_book_id)
+        WHERE user_id IS NOT NULL AND provider_book_id IS NOT NULL
+        """
+    )
+    db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_books_user_identity
+        ON books(user_id, identity_key)
+        WHERE user_id IS NOT NULL
+        """
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_books_user_updated ON books(user_id, updated_at DESC)"
+    )
 
     series_member_columns = {
         row["name"] for row in db.execute("PRAGMA table_info(series_members)").fetchall()
@@ -224,6 +271,13 @@ def init_db():
         except sqlite3.IntegrityError:
             # Ein bereits vorhandener, gleichwertiger Datensatz bleibt maßgeblich.
             pass
+
+    # Ein unterbrochenes Upgrade kann bereits ein erstes Konto, aber noch nicht
+    # zugeordnete Altbestände hinterlassen. Nur bei exakt einem Konto ist die
+    # Besitzzuordnung eindeutig und darf automatisch abgeschlossen werden.
+    owners = db.execute("SELECT id FROM users ORDER BY id LIMIT 2").fetchall()
+    if len(owners) == 1:
+        db.execute("UPDATE books SET user_id = ? WHERE user_id IS NULL", (owners[0]["id"],))
     db.commit()
 
 

@@ -28,9 +28,20 @@ npm run run
 
 Das Startskript richtet mit `adb reverse` eine ausschließlich über die lokale
 ADB-Verbindung erreichbare Weiterleitung ein. Innerhalb des Handys zeigt
-`http://localhost:5000` dadurch auf die Bookypedia-App des Entwicklungs-PCs.
+`http://localhost:8000` dadurch auf Port 5000 der Bookypedia-App des
+Entwicklungs-PCs. Derselbe Handy-Port kann später vorübergehend über einen
+lokalen SSH-Tunnel zum VPS geführt werden.
 
-Die in `capacitor.config.ts` erlaubte unverschlüsselte HTTP-Verbindung ist nur
-für diese lokale Entwicklungsphase bestimmt. Vor einer Veröffentlichung wird
-sie entfernt und durch den abgesicherten HTTPS-Endpunkt mit Geräteanmeldung
-ersetzt.
+Die in `capacitor.config.ts` erlaubte unverschlüsselte HTTP-Verbindung gilt nur
+für `localhost`. Für einen Build gegen den öffentlich abgesicherten VPS wird
+die HTTPS-Adresse beim Synchronisieren gesetzt:
+
+```bash
+BOOKYPEDIA_APP_URL=https://books.example.com npm run sync
+cd android
+./gradlew assembleDebug
+```
+
+Ersetze die Beispieladresse durch die konfigurierte Bookypedia-Domain. Web und
+Android verwenden anschließend dieselbe Anmeldung und benutzerspezifische
+Bibliothek; ein SSH-Tunnel oder Termux ist nicht nötig.

@@ -154,10 +154,16 @@ def test_existing_database_gets_empty_status_timestamps(tmp_path):
     assert book["description"] is None
     assert book["subjects"] == []
     with app.app_context():
-        identity = importlib.import_module("readmore.db").get_db().execute(
+        database_handle = importlib.import_module("readmore.db").get_db()
+        identity = database_handle.execute(
             "SELECT identity_key FROM books WHERE id = 1"
         ).fetchone()["identity_key"]
         assert identity == "地球星人|村田沙耶香"
+        indexes = {
+            row["name"] for row in database_handle.execute("PRAGMA index_list(books)").fetchall()
+        }
+        assert "idx_books_identity_key" not in indexes
+        assert "idx_books_user_identity" in indexes
 
 
 def test_duplicate_is_rejected_by_catalogue_id_isbn_or_title(client):

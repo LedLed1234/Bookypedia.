@@ -17,6 +17,7 @@ EXTRA_FIELDS = (
     "status_code",
     "duration_ms",
     "book_id",
+    "user_id",
     "provider",
     "provider_book_id",
     "lookup_status",
@@ -27,6 +28,7 @@ EXTRA_FIELDS = (
     "queued_books",
     "worker_enabled",
     "error_type",
+    "csrf_rejected",
 )
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 

@@ -34,7 +34,9 @@ if ! "$adb_bin" get-state >/dev/null 2>&1; then
   exit 1
 fi
 
-"$adb_bin" reverse tcp:5000 tcp:5000
+# Die App verwendet auf dem Handy immer Port 8000. Lokal wird dieser Port
+# per ADB an den Flask-Entwicklungsport 5000 des PCs weitergereicht.
+"$adb_bin" reverse tcp:8000 tcp:5000
 cd "$project_dir"
 npx cap sync android
 npx cap run android

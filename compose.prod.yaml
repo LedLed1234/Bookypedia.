@@ -7,6 +7,10 @@ services:
     environment:
       DATABASE_PATH: /data/readmore.db
       BOOK_PROVIDER: open_library
+      APP_ENV: production
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY muss in der .env-Datei gesetzt sein}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-0}
+      TRUST_PROXY: ${TRUST_PROXY:-0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-json}
     ports:

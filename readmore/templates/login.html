@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="de" data-theme="green">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101512">
+  <meta name="description" content="Bei Bookypedia anmelden.">
+  <title>Anmelden – Bookypedia.</title>
+  <script>
+    try {
+      const android = window.Capacitor?.getPlatform?.() === "android" || navigator.userAgent.includes("BookypediaAndroid");
+      if (android) document.documentElement.classList.add("platform-android");
+      const savedTheme = localStorage.getItem("bookypedia-theme");
+      if (["red", "blue-white", "green", "brown", "cozy", "light"].includes(savedTheme)) document.documentElement.dataset.theme = savedTheme;
+    } catch (_error) {}
+  </script>
+  <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=35">
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <a class="auth-brand" href="{{ url_for('auth.login') }}">Bookypedia.</a>
+    <section class="auth-card" aria-labelledby="login-title">
+      <div class="auth-heading">
+        <p class="eyebrow">Deine persönliche Bibliothek</p>
+        <h1 id="login-title">Willkommen zurück</h1>
+        <p>Melde dich mit dem Konto an, das für dich angelegt wurde.</p>
+      </div>
+      {% if error %}<div class="auth-message error" role="alert">{{ error }}</div>{% endif %}
+      <form class="auth-form" method="post" action="{{ url_for('auth.login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ next_url or '/' }}">
+        <label>Benutzername
+          <input name="username" value="{{ username or '' }}" required maxlength="40" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus>
+        </label>
+        <label>Passwort
+          <input name="password" type="password" required maxlength="256" autocomplete="current-password">
+        </label>
+        <button class="button button-primary auth-submit" type="submit">Anmelden</button>
+      </form>
+      <p class="auth-help">Es gibt keine öffentliche Registrierung. Konten werden persönlich freigeschaltet.</p>
+    </section>
+  </main>
+</body>
+</html>

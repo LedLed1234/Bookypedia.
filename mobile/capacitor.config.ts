@@ -1,14 +1,19 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
+const nodeProcess = (globalThis as typeof globalThis & {
+  process?: { env?: Record<string, string | undefined> };
+}).process;
+const appUrl = nodeProcess?.env?.BOOKYPEDIA_APP_URL?.trim() || "http://localhost:8000";
+
 const config: CapacitorConfig = {
   appId: "de.bookypedia.app",
   appName: "Bookypedia",
   webDir: "www",
   server: {
-    // Nur fuer die lokale Entwicklung: `adb reverse` leitet diesen Port
-    // vom Android-Geraet an die Flask-App auf dem Entwicklungs-PC weiter.
-    url: "http://localhost:5000",
-    cleartext: true,
+    // Lokal leitet `adb reverse` diesen Port an den Entwicklungs-PC weiter.
+    // Produktions-Builds erhalten BOOKYPEDIA_APP_URL=https://... beim Sync.
+    url: appUrl,
+    cleartext: appUrl.startsWith("http://localhost"),
   },
   android: {
     // Eindeutige Kennung fuer Android-spezifische, serverseitig geladene UI-Regeln.

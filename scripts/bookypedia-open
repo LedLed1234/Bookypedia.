@@ -16,6 +16,23 @@ fi
 
 CONTROL_SOCKET="${RUNTIME_DIR}/bookypedia-tunnel.sock"
 
+SSH_TUNNEL_OPTIONS=(
+    -M
+    -S "$CONTROL_SOCKET"
+    -fNT
+    -o ExitOnForwardFailure=yes
+    -o ServerAliveInterval=30
+    -o ServerAliveCountMax=3
+    -o PreferredAuthentications=publickey
+    -o PasswordAuthentication=no
+    -o KbdInteractiveAuthentication=no
+    -L "127.0.0.1:${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}"
+)
+
+start_tunnel() {
+    ssh "${SSH_TUNNEL_OPTIONS[@]}" "$@" "$SSH_HOST"
+}
+
 notify() {
     if command -v notify-send >/dev/null 2>&1; then
         notify-send "Bookypedia" "$1" >/dev/null 2>&1 || true
@@ -36,16 +53,15 @@ if ! ssh -S "$CONTROL_SOCKET" -O check "$SSH_HOST" >/dev/null 2>&1; then
     rm -f -- "$CONTROL_SOCKET"
 
     printf 'Bookypedia: SSH-Tunnel wird aufgebaut …\n'
-    ssh \
-        -M \
-        -S "$CONTROL_SOCKET" \
-        -fNT \
-        -o ExitOnForwardFailure=yes \
-        -o ServerAliveInterval=30 \
-        -o ServerAliveCountMax=3 \
-        -L "127.0.0.1:${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}" \
-        "$SSH_HOST" \
-        || fail "Der SSH-Tunnel konnte nicht aufgebaut werden."
+    if ! start_tunnel; then
+        # Einige Desktop-Keyrings kennen den Schlüssel, verweigern aber das
+        # Signieren. Dann den privaten Schlüssel direkt verwenden. Dadurch
+        # erscheint die Schlüssel-Passphrase statt einer VPS-Passwortabfrage.
+        rm -f -- "$CONTROL_SOCKET"
+        printf 'Bookypedia: SSH-Agent nicht verfügbar, Schlüssel wird direkt verwendet …\n'
+        start_tunnel -o IdentityAgent=none \
+            || fail "Der SSH-Tunnel konnte nicht aufgebaut werden."
+    fi
 fi
 
 ready=false
