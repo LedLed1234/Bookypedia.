@@ -222,6 +222,24 @@ def init_db():
     if "page_count" not in series_member_columns:
         db.execute("ALTER TABLE series_members ADD COLUMN page_count INTEGER")
 
+    # Ältere Versionen konnten Cover noch mit einer unverschlüsselten Open-
+    # Library-Adresse speichern. Unter HTTPS blockiert der Browser diese Bilder.
+    # Open Library stellt dieselben Pfade über HTTPS bereit.
+    db.execute(
+        """
+        UPDATE books
+        SET cover_url = 'https://' || substr(cover_url, 8)
+        WHERE cover_url LIKE 'http://covers.openlibrary.org/%'
+        """
+    )
+    db.execute(
+        """
+        UPDATE series_members
+        SET cover_url = 'https://' || substr(cover_url, 8)
+        WHERE cover_url LIKE 'http://covers.openlibrary.org/%'
+        """
+    )
+
     series_columns = {row["name"] for row in db.execute("PRAGMA table_info(series)").fetchall()}
     if "metadata_version" not in series_columns:
         db.execute("ALTER TABLE series ADD COLUMN metadata_version INTEGER NOT NULL DEFAULT 1")

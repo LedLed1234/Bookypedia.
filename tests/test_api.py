@@ -132,8 +132,11 @@ def test_existing_database_gets_empty_status_timestamps(tmp_path):
     )
     connection.execute(
         """
-        INSERT INTO books (title, authors, identity_key, status)
-        VALUES ('地球星人', '村田沙耶香', '|', 'read')
+        INSERT INTO books (title, authors, cover_url, identity_key, status)
+        VALUES (
+            '地球星人', '村田沙耶香',
+            'http://covers.openlibrary.org/b/id/123-M.jpg', '|', 'read'
+        )
         """
     )
     connection.commit()
@@ -153,6 +156,7 @@ def test_existing_database_gets_empty_status_timestamps(tmp_path):
     assert book["publisher"] is None
     assert book["description"] is None
     assert book["subjects"] == []
+    assert book["cover_url"] == "https://covers.openlibrary.org/b/id/123-M.jpg"
     with app.app_context():
         database_handle = importlib.import_module("readmore.db").get_db()
         identity = database_handle.execute(

@@ -108,7 +108,7 @@ def create_app(test_config=None):
             "default-src 'self'; script-src 'self' 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; "
             "connect-src 'self'; object-src 'none'; base-uri 'self'; "
-            "form-action 'self'; frame-ancestors 'none'",
+            "form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
         )
         if request.is_secure and app.config["APP_ENV"] == "production":
             response.headers.setdefault(
