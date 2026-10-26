@@ -39,6 +39,79 @@ def test_complete_book_lifecycle(client):
     assert client.get("/api/books").get_json()["books"] == []
 
 
+def test_wishlist_and_owned_unread_books_are_separate(client):
+    wishlist = client.post("/api/books", json=BOOK).get_json()["book"]
+    unread = client.post(
+        "/api/books",
+        json={
+            **BOOK,
+            "title": "Freie Geister",
+            "isbn": "9780000000001",
+            "provider_book_id": "/works/OWNED",
+            "status": "unread",
+        },
+    ).get_json()["book"]
+
+    assert wishlist["status"] == "want_to_read"
+    assert wishlist["is_owned"] is False
+    assert unread["status"] == "unread"
+    assert unread["is_owned"] is True
+    assert unread["owned_at"] is not None
+    assert [book["id"] for book in client.get("/api/books?status=unread").get_json()["books"]] == [
+        unread["id"]
+    ]
+    assert [
+        book["id"] for book in client.get("/api/books?status=want_to_read").get_json()["books"]
+    ] == [wishlist["id"]]
+    assert [book["id"] for book in client.get("/api/books?status=owned").get_json()["books"]] == [
+        unread["id"]
+    ]
+
+    moved = client.patch(
+        f"/api/books/{wishlist['id']}", json={"status": "unread"}
+    ).get_json()["book"]
+    assert moved["status"] == "unread"
+    assert moved["is_owned"] is True
+    assert moved["owned_at"] is not None
+
+    returned = client.patch(
+        f"/api/books/{wishlist['id']}", json={"status": "want_to_read"}
+    ).get_json()["book"]
+    assert returned["status"] == "want_to_read"
+    assert returned["is_owned"] is False
+    assert returned["owned_at"] is None
+
+
+def test_owned_is_an_aggregate_filter_not_a_book_status(client):
+    owned_ids = []
+    for index, status in enumerate(("unread", "reading", "read"), start=1):
+        response = client.post(
+            "/api/books",
+            json={
+                "title": f"Eigenes Buch {index}",
+                "authors": ["Eine Person"],
+                "status": status,
+            },
+        )
+        assert response.status_code == 201
+        owned_ids.append(response.get_json()["book"]["id"])
+
+    wishlist = client.post(
+        "/api/books",
+        json={"title": "Nur gewünscht", "authors": ["Eine Person"], "status": "want_to_read"},
+    ).get_json()["book"]
+
+    owned = client.get("/api/books?status=owned").get_json()["books"]
+    assert {book["id"] for book in owned} == set(owned_ids)
+    assert wishlist["id"] not in {book["id"] for book in owned}
+    assert client.post(
+        "/api/books", json={"title": "Ungültig", "status": "owned"}
+    ).status_code == 400
+    assert client.patch(
+        f"/api/books/{owned_ids[0]}", json={"status": "owned"}
+    ).status_code == 400
+
+
 def test_status_timestamps_follow_hierarchical_transitions(client):
     created = client.post("/api/books", json=BOOK).get_json()["book"]
     book_id = created["id"]
@@ -945,6 +1018,12 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="settings-theme"' in html
     assert 'id="settings-search-limit"' in html
     assert 'id="settings-start-view"' in html
+    assert 'data-filter="unread"' in html
+    assert '<span>Ungelesen</span>' in html
+    assert '<span>Lese ich</span>' in html
+    assert '<span>Gelesen</span>' in html
+    assert '<span>Wunschliste</span>' in html
+    assert '<span>Im Besitz</span>' in html
     assert 'id="book-dialog-original"' in html
     assert 'id="book-dialog-info"' in html
     assert 'id="book-dialog-main-view"' in html
@@ -956,7 +1035,7 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="book-dialog-status"' not in html
     assert 'id="book-dialog-save"' not in html
     assert 'id="book-dialog-review"' not in html
-    assert "automatisch in die Bibliothek verschoben" in html
+    assert "automatisch zu „Gelesen“ verschoben" in html
     for theme in ("red", "blue-white", "green", "brown", "cozy", "light"):
         assert f'data-theme-option="{theme}"' in html
 
@@ -967,4 +1046,12 @@ def test_frontend_exposes_all_appearance_palettes(client):
         "startView": "all",
     }
     assert config["options"]["searchResultLimits"] == [4, 6, 8, 12]
+    assert [view["value"] for view in config["options"]["startViews"]] == [
+        "all",
+        "unread",
+        "reading",
+        "read",
+        "want_to_read",
+        "owned",
+    ]
 

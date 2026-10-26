@@ -41,9 +41,11 @@ CREATE TABLE IF NOT EXISTS books (
     identity_key TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'want_to_read'
         CHECK (status IN ('want_to_read', 'reading', 'read')),
+    is_owned INTEGER NOT NULL DEFAULT 0 CHECK (is_owned IN (0, 1)),
     rating INTEGER CHECK (rating IS NULL OR rating BETWEEN 1 AND 5),
     review TEXT NOT NULL DEFAULT '',
     want_to_read_at TEXT,
+    owned_at TEXT,
     reading_at TEXT,
     read_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -167,6 +169,8 @@ def init_db():
     migrations = {
         "user_id": "INTEGER REFERENCES users(id) ON DELETE CASCADE",
         "want_to_read_at": "TEXT",
+        "is_owned": "INTEGER NOT NULL DEFAULT 0",
+        "owned_at": "TEXT",
         "reading_at": "TEXT",
         "read_at": "TEXT",
         "provider_edition_id": "TEXT",
@@ -264,6 +268,15 @@ def init_db():
         SET reading_at = NULL, read_at = NULL
         WHERE status = 'want_to_read'
           AND (reading_at IS NOT NULL OR read_at IS NOT NULL)
+        """
+    )
+    # Bücher, die bereits gelesen werden oder wurden, gelten als im Besitz.
+    # Bestehende Wunschlisten-Einträge bleiben bewusst auf der Wunschliste.
+    db.execute(
+        """
+        UPDATE books
+        SET is_owned = 1
+        WHERE status IN ('reading', 'read') AND is_owned = 0
         """
     )
     db.execute(

@@ -95,14 +95,20 @@
         <button class="status-tab active" data-filter="all" aria-pressed="true">
           <span>Alle</span><strong id="count-all">0</strong>
         </button>
+        <button class="status-tab" data-filter="unread" aria-pressed="false">
+          <span>Ungelesen</span><strong id="count-unread">0</strong>
+        </button>
         <button class="status-tab" data-filter="reading" aria-pressed="false">
-          <span>Lese gerade</span><strong id="count-reading">0</strong>
+          <span>Lese ich</span><strong id="count-reading">0</strong>
         </button>
         <button class="status-tab" data-filter="read" aria-pressed="false">
-          <span>Bibliothek</span><strong id="count-read">0</strong>
+          <span>Gelesen</span><strong id="count-read">0</strong>
         </button>
         <button class="status-tab" data-filter="want_to_read" aria-pressed="false">
-          <span>Wishlist</span><strong id="count-want_to_read">0</strong>
+          <span>Wunschliste</span><strong id="count-want_to_read">0</strong>
+        </button>
+        <button class="status-tab" data-filter="owned" aria-pressed="false">
+          <span>Im Besitz</span><strong id="count-owned">0</strong>
         </button>
     </nav>
 
@@ -207,9 +213,10 @@
       </label>
       <label>Liste
         <select name="status">
-          <option value="want_to_read">Möchte lesen</option>
-          <option value="reading">Lese gerade</option>
+          <option value="unread">Ungelesen (im Besitz)</option>
+          <option value="reading">Lese ich</option>
           <option value="read">Gelesen</option>
+          <option value="want_to_read">Wunschliste</option>
         </select>
       </label>
       <div class="dialog-actions">
@@ -240,7 +247,7 @@
       <label>Bewertungstext
         <textarea name="review" rows="6" maxlength="5000" placeholder="Was möchtest du über dieses Buch festhalten?"></textarea>
       </label>
-      <p class="review-status-note">Beim Speichern einer Bewertung wird das Buch automatisch in die Bibliothek verschoben.</p>
+      <p class="review-status-note">Beim Speichern einer Bewertung wird das Buch automatisch zu „Gelesen“ verschoben.</p>
       <div class="dialog-actions split-actions">
         <button class="text-button danger" id="delete-review" type="button">Bewertung löschen</button>
         <div>

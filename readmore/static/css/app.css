@@ -209,8 +209,8 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 
 .status-tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  max-width: 760px;
+  grid-template-columns: repeat(6, 1fr);
+  max-width: 1040px;
   margin: 0 auto 56px;
   padding: 5px;
   gap: 4px;

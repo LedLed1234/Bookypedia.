@@ -26,7 +26,7 @@ from .db import get_db
 
 auth = Blueprint("auth", __name__)
 USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{2,39}$")
-MIN_PASSWORD_LENGTH = 12
+MIN_PASSWORD_LENGTH = 5
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_BLOCK_SECONDS = 15 * 60
 LOGIN_MAX_FAILURES = 5

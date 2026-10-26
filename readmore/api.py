@@ -18,10 +18,11 @@ from .text import identity_key, normalize_text
 
 
 api = Blueprint("api", __name__)
-VALID_STATUSES = {"want_to_read", "reading", "read"}
-STATUS_ORDER = ("want_to_read", "reading", "read")
+VALID_STATUSES = {"want_to_read", "unread", "reading", "read"}
+VALID_BOOK_FILTERS = VALID_STATUSES | {"owned"}
 STATUS_TIMESTAMP_COLUMNS = {
     "want_to_read": "want_to_read_at",
+    "unread": "owned_at",
     "reading": "reading_at",
     "read": "read_at",
 }
@@ -142,6 +143,9 @@ def _cached_book_metadata(db, provider_book_id, provider_edition_id=None):
 def serialize_book(row):
     book = dict(row)
     book.pop("user_id", None)
+    if book["status"] == "want_to_read" and book.get("is_owned"):
+        book["status"] = "unread"
+    book["is_owned"] = bool(book.get("is_owned"))
     book["authors"] = [author.strip() for author in book["authors"].split(",") if author.strip()]
     book["original_authors"] = [
         author.strip() for author in book.get("original_authors", "").split(",") if author.strip()
@@ -278,10 +282,37 @@ def search_books():
 @api.get("/books")
 def list_books():
     status = request.args.get("status")
-    if status and status not in VALID_STATUSES:
+    if status and status not in VALID_BOOK_FILTERS:
         return validation_error("Ungültiger Lesestatus.")
     db = get_db()
-    if status:
+    if status == "owned":
+        rows = db.execute(
+            """
+            SELECT * FROM books
+            WHERE user_id = ? AND is_owned = 1
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (g.user["id"],),
+        ).fetchall()
+    elif status == "unread":
+        rows = db.execute(
+            """
+            SELECT * FROM books
+            WHERE user_id = ? AND status = 'want_to_read' AND is_owned = 1
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (g.user["id"],),
+        ).fetchall()
+    elif status == "want_to_read":
+        rows = db.execute(
+            """
+            SELECT * FROM books
+            WHERE user_id = ? AND status = 'want_to_read' AND is_owned = 0
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (g.user["id"],),
+        ).fetchall()
+    elif status:
         rows = db.execute(
             """
             SELECT * FROM books
@@ -427,6 +458,8 @@ def create_book():
         return jsonify(error="Dieses Buch ist bereits in deiner Sammlung.", book=serialize_book(duplicate)), 409
 
     try:
+        stored_status = "want_to_read" if status == "unread" else status
+        is_owned = int(status != "want_to_read")
         status_timestamp_column = STATUS_TIMESTAMP_COLUMNS[status]
         cursor = db.execute(
             f"""
@@ -434,10 +467,10 @@ def create_book():
                 user_id, title, authors, isbn, provider_book_id, provider_edition_id,
                 cover_url, original_title, original_authors, language, page_count,
                 publisher, publish_date, description, physical_format, subtitle,
-                subjects_json, identity_key, status, rating, review,
+                subjects_json, identity_key, status, is_owned, rating, review,
                 {status_timestamp_column}
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
                 g.user["id"],
@@ -458,7 +491,8 @@ def create_book():
                 subtitle,
                 subjects_json,
                 key,
-                status,
+                stored_status,
+                is_owned,
                 rating,
                 review,
             ),
@@ -516,17 +550,26 @@ def update_book(book_id):
     if "status" in payload:
         if payload["status"] not in VALID_STATUSES:
             return validation_error("Ungültiger Lesestatus.")
-        if payload["status"] != existing["status"]:
+        existing_status = (
+            "unread"
+            if existing["status"] == "want_to_read" and existing["is_owned"]
+            else existing["status"]
+        )
+        if payload["status"] != existing_status:
             new_status = payload["status"]
             updates.append("status = ?")
-            values.append(new_status)
+            values.append("want_to_read" if new_status == "unread" else new_status)
+            updates.append("is_owned = ?")
+            values.append(int(new_status != "want_to_read"))
             updates.append(f"{STATUS_TIMESTAMP_COLUMNS[new_status]} = CURRENT_TIMESTAMP")
-            # Der Leseverlauf ist eine Fortschrittskette. Sobald ein Buch auf
-            # eine frühere Stufe gesetzt wird, sind alle späteren Meilensteine
-            # nicht mehr Teil des aktuellen Verlaufs.
-            new_status_index = STATUS_ORDER.index(new_status)
-            for later_status in STATUS_ORDER[new_status_index + 1:]:
-                updates.append(f"{STATUS_TIMESTAMP_COLUMNS[later_status]} = NULL")
+            if new_status == "want_to_read":
+                updates.extend(("owned_at = NULL", "reading_at = NULL", "read_at = NULL"))
+            elif new_status == "unread":
+                updates.extend(("reading_at = NULL", "read_at = NULL"))
+            elif new_status == "reading":
+                updates.extend(("owned_at = COALESCE(owned_at, CURRENT_TIMESTAMP)", "read_at = NULL"))
+            elif new_status == "read":
+                updates.append("owned_at = COALESCE(owned_at, CURRENT_TIMESTAMP)")
             changed_fields.append("status")
     if "rating" in payload:
         rating = payload["rating"]

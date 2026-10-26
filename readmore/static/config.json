@@ -16,9 +16,11 @@
     "searchResultLimits": [4, 6, 8, 12],
     "startViews": [
       { "value": "all", "label": "Alle" },
-      { "value": "reading", "label": "Lese gerade" },
-      { "value": "read", "label": "Bibliothek" },
-      { "value": "want_to_read", "label": "Wishlist" }
+      { "value": "unread", "label": "Ungelesen" },
+      { "value": "reading", "label": "Lese ich" },
+      { "value": "read", "label": "Gelesen" },
+      { "value": "want_to_read", "label": "Wunschliste" },
+      { "value": "owned", "label": "Im Besitz" }
     ]
   }
 }

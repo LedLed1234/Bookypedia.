@@ -1,5 +1,7 @@
 import re
 
+import pytest
+
 from readmore import create_app
 from readmore.auth import create_user
 
@@ -34,6 +36,16 @@ def login(client, username, password=PASSWORD):
         "/login",
         data={"username": username, "password": password, "next": "/"},
     )
+
+
+def test_five_character_password_is_allowed(tmp_path):
+    app = make_app(tmp_path)
+    with app.app_context():
+        create_user("short-password", "abcde", require_password_change=False)
+        with pytest.raises(ValueError, match="mindestens 5 Zeichen"):
+            create_user("too-short", "abcd", require_password_change=False)
+
+    assert login(app.test_client(), "short-password", "abcde").status_code == 302
 
 
 def test_private_routes_require_login(tmp_path):

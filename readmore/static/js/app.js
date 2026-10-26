@@ -1,9 +1,10 @@
 const IS_ANDROID_APP = document.documentElement.classList.contains("platform-android");
 
 const STATUS_LABELS = {
-  want_to_read: "Wishlist",
-  reading: "Lese gerade",
-  read: "Bibliothek",
+  unread: "Ungelesen",
+  reading: "Lese ich",
+  read: "Gelesen",
+  want_to_read: "Wunschliste",
 };
 
 const VIEW_CONTENT = {
@@ -13,19 +14,29 @@ const VIEW_CONTENT = {
     emptyCopy: "Suche oben nach einem Buch und füge es deiner Sammlung hinzu.",
   },
   reading: {
-    title: "Lese gerade",
+    title: "Lese ich",
     emptyTitle: "Du liest gerade kein Buch.",
     emptyCopy: "Suche oben nach einem Buch und starte deine nächste Lektüre.",
   },
   read: {
-    title: "Bibliothek",
-    emptyTitle: "Deine Bibliothek ist noch leer.",
+    title: "Gelesen",
+    emptyTitle: "Du hast noch kein Buch als gelesen markiert.",
     emptyCopy: "Füge bereits gelesene Bücher hinzu und halte deine Bewertung fest.",
   },
   want_to_read: {
-    title: "Wishlist",
-    emptyTitle: "Deine Wishlist ist noch leer.",
+    title: "Wunschliste",
+    emptyTitle: "Deine Wunschliste ist noch leer.",
     emptyCopy: "Speichere Bücher, die du später lesen möchtest.",
+  },
+  unread: {
+    title: "Ungelesen",
+    emptyTitle: "Du hast keine ungelesenen Bücher im Besitz.",
+    emptyCopy: "Füge ein Buch hinzu, das dir bereits gehört und noch auf dich wartet.",
+  },
+  owned: {
+    title: "Im Besitz",
+    emptyTitle: "Du hast noch keine Bücher im Besitz.",
+    emptyCopy: "Bücher aus „Ungelesen“, „Lese ich“ und „Gelesen“ erscheinen hier gemeinsam.",
   },
 };
 
@@ -38,7 +49,8 @@ const SORT_OPTIONS = {
   title_desc: "Titel: Z–A",
 };
 const STATUS_HISTORY = [
-  { status: "want_to_read", field: "want_to_read_at", label: "Zur Wishlist hinzugefügt" },
+  { status: "want_to_read", field: "want_to_read_at", label: "Zur Wunschliste hinzugefügt" },
+  { status: "unread", field: "owned_at", label: "Als ungelesen erfasst" },
   { status: "reading", field: "reading_at", label: "Angefangen zu lesen" },
   { status: "read", field: "read_at", label: "Fertig gelesen" },
 ];
@@ -160,9 +172,11 @@ const FALLBACK_APP_CONFIG = {
     searchResultLimits: [4, 6, 8, 12],
     startViews: [
       { value: "all", label: "Alle" },
-      { value: "reading", label: "Lese gerade" },
-      { value: "read", label: "Bibliothek" },
-      { value: "want_to_read", label: "Wishlist" },
+      { value: "unread", label: "Ungelesen" },
+      { value: "reading", label: "Lese ich" },
+      { value: "read", label: "Gelesen" },
+      { value: "want_to_read", label: "Wunschliste" },
+      { value: "owned", label: "Im Besitz" },
     ],
   },
 };
@@ -554,8 +568,8 @@ function renderSuggestions(query, { loading = false, failed = false } = {}) {
       wishlist.textContent = "Gespeichert";
       wishlist.disabled = true;
     } else {
-      wishlist.textContent = "＋ Wishlist";
-      wishlist.setAttribute("aria-label", `${book.title} zur Wishlist hinzufügen`);
+      wishlist.textContent = "＋ Wunschliste";
+      wishlist.setAttribute("aria-label", `${book.title} zur Wunschliste hinzufügen`);
       wishlist.addEventListener("click", () => addSearchBook(book, "want_to_read", wishlist, true));
     }
     row.append(main, wishlist);
@@ -634,7 +648,11 @@ function selectSuggestion(index) {
 function renderLibrary() {
   loadingState.hidden = true;
   grid.replaceChildren();
-  const filtered = state.filter === "all" ? state.books : state.books.filter((book) => book.status === state.filter);
+  const filtered = state.filter === "all"
+    ? state.books
+    : state.books.filter((book) => (
+      state.filter === "owned" ? book.is_owned : book.status === state.filter
+    ));
   const visible = sortBooks(filtered);
   updateCounts(visible.length);
   if (state.libraryMode === "series") renderGroupedLibrary(visible);
@@ -1526,7 +1544,7 @@ async function addSearchBook(book, status, button, fromSuggestions = false) {
     await loadBooks();
     if (!searchPanel.hidden) renderSearchResults();
     if (fromSuggestions && !searchSuggestions.hidden) renderSuggestions(state.suggestionQuery);
-    showToast(`„${book.title}“ wurde zur ${status === "want_to_read" ? "Wishlist" : "Sammlung"} hinzugefügt.`);
+    showToast(`„${book.title}“ wurde zu „${STATUS_LABELS[status]}“ hinzugefügt.`);
   } catch (error) {
     showToast(error.status === 409 ? "Dieses Buch ist bereits gespeichert." : `Nicht gespeichert: ${error.message}`, true);
     if (error.status === 409) await loadBooks();
@@ -1578,8 +1596,18 @@ function openReview(book) {
 }
 
 function updateCounts(visibleCount) {
-  const counts = { all: state.books.length, want_to_read: 0, reading: 0, read: 0 };
-  state.books.forEach((book) => { counts[book.status] += 1; });
+  const counts = {
+    all: state.books.length,
+    unread: 0,
+    reading: 0,
+    read: 0,
+    want_to_read: 0,
+    owned: 0,
+  };
+  state.books.forEach((book) => {
+    counts[book.status] += 1;
+    if (book.is_owned) counts.owned += 1;
+  });
   for (const [key, value] of Object.entries(counts)) document.querySelector(`#count-${key}`).textContent = value;
   const content = VIEW_CONTENT[state.filter];
   document.querySelector("#library-heading").textContent = content.title;
@@ -1730,7 +1758,7 @@ document.querySelector("#review-form").addEventListener("submit", async (event) 
     await loadBooks();
     showToast(
       hasReview
-        ? "Deine Bewertung wurde gespeichert. Das Buch ist jetzt in der Bibliothek."
+        ? "Deine Bewertung wurde gespeichert. Das Buch ist jetzt unter „Gelesen“."
         : "Die Bewertung wurde entfernt.",
     );
   } catch (error) {

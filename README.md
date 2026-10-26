@@ -6,6 +6,102 @@ Eine deutschsprachige Leseverwaltung mit Flask, SQLite und der Open-Library-Such
 
 Bücher und bereits ermittelte Reihen werden gemeinsam in SQLite gespeichert. Neue Bücher sind sofort verfügbar; die zugehörige Reihe lädt ein Hintergrund-Worker unabhängig von der Bedienoberfläche nach. Vorhandene Bücher ohne Reiheninformationen werden beim nächsten App-Start automatisch ergänzt. Vorübergehende Fehler bei Open Library werden mit wachsendem Zeitabstand erneut versucht.
 
+## Entwicklung und Deployment – Kurzablauf
+
+Die Umgebung wird durch den jeweiligen Befehl ausgewählt. Es gibt keine
+automatische Umschaltung zwischen lokalem Entwicklungsserver und VPS.
+
+### Web-App lokal entwickeln
+
+Im Projektverzeichnis den Entwicklungscontainer starten:
+
+```bash
+docker compose up --build -d
+```
+
+Danach **http://localhost:5000** öffnen. Der Quellcode ist eingebunden und der
+Flask-Entwicklungsserver lädt Python-Änderungen automatisch neu. Für Änderungen
+an HTML, CSS oder JavaScript genügt normalerweise ein Neuladen der Seite.
+
+### Android lokal entwickeln
+
+Den lokalen Docker-Server laufen lassen, das Handy mit aktiviertem
+USB-Debugging anschließen und dann ausführen:
+
+```bash
+cd mobile
+npm run run
+```
+
+Das Skript synchronisiert die lokale Adresse `http://localhost:8000`, richtet
+`adb reverse` zum Flask-Port 5000 ein, installiert die Entwicklungs-App und
+startet sie. `npm install` ist nur beim ersten Einrichten sowie nach Änderungen
+an `package.json` oder `package-lock.json` erforderlich.
+
+Browser und Android laden dieselbe Weboberfläche. Deshalb benötigen Änderungen
+am Backend, an HTML, CSS oder JavaScript – einschließlich der über den
+Android-User-Agent aktivierten mobilen Darstellung – keinen neuen APK-Build.
+Die App muss zum Aktualisieren gegebenenfalls geschlossen und neu geöffnet
+werden. Ein neuer Android-Build ist nur bei Änderungen am nativen Wrapper,
+Capacitor, App-Icon, App-Namen, Berechtigungen oder Android-Konfigurationen
+erforderlich.
+
+### Änderungen testen und versionieren
+
+Im Projektverzeichnis:
+
+```bash
+docker compose run --rm app pytest -q
+git status
+git add .
+git commit -m "Beschreibung der Änderung"
+git push
+```
+
+### Web-App auf dem VPS veröffentlichen
+
+Nach dem Push:
+
+```bash
+ssh bookypedia-vps
+cd /opt/bookypedia
+git pull --ff-only
+docker compose -f compose.prod.yaml -f compose.public.yaml up --build -d
+docker compose -f compose.prod.yaml -f compose.public.yaml ps
+```
+
+Die Web-App ist anschließend unter **https://epiloguehouse.de** erreichbar.
+Browser und installierte Produktions-App laden die aktualisierte Oberfläche
+direkt vom VPS. Datenbank, Konten, `.env` und Caddy-Zertifikate bleiben beim
+Neubau der Container erhalten. Niemals `docker compose down -v` verwenden,
+wenn die Produktionsdaten erhalten bleiben sollen.
+
+### Android-Produktions-App neu bauen
+
+Dieser Schritt ist nur bei nativen Android-Änderungen oder einer Änderung der
+Serveradresse notwendig:
+
+```bash
+cd mobile
+BOOKYPEDIA_APP_URL=https://epiloguehouse.de npm run sync
+cd android
+ANDROID_HOME=/home/led/Android/Sdk ./gradlew assembleDebug
+```
+
+Die APK liegt danach unter
+`mobile/android/app/build/outputs/apk/debug/app-debug.apk`. Auf einem per USB
+verbundenen Gerät wird sie aktualisiert mit:
+
+```bash
+/home/led/Android/Sdk/platform-tools/adb install -r \
+  app/build/outputs/apk/debug/app-debug.apk
+```
+
+Der lokale Entwicklungsbuild und der Produktionsbuild besitzen derzeit
+dieselbe App-ID und ersetzen sich daher gegenseitig auf dem Handy. Für die
+Weitergabe an andere Personen ist später ein signierter Release-Build mit
+dauerhaft gesichertem, nicht versioniertem Keystore vorgesehen.
+
 ## Starten
 
 Voraussetzung: Docker Desktop bzw. Docker Engine mit Docker Compose.
