@@ -1041,7 +1041,7 @@ def test_frontend_exposes_all_appearance_palettes(client):
 
     config = client.get("/static/config.json").get_json()
     assert config["defaults"] == {
-        "theme": "green",
+        "theme": "blue-white",
         "searchResultLimit": 4,
         "startView": "all",
     }

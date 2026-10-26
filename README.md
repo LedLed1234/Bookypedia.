@@ -46,6 +46,24 @@ werden. Ein neuer Android-Build ist nur bei Änderungen am nativen Wrapper,
 Capacitor, App-Icon, App-Namen, Berechtigungen oder Android-Konfigurationen
 erforderlich.
 
+Für Änderungen ausschließlich innerhalb der installierten Android-App stehen
+in CSS die Selektoren unter `.platform-android` und in JavaScript die Konstante
+`IS_ANDROID_APP` zur Verfügung. Eine normale Media Query nach Bildschirmbreite
+betrifft dagegen auch mobile Browser.
+
+| Art der Änderung                                     | VPS neu deployen | APK neu bauen |
+| ---------------------------------------------------- | ---------------- | ------------- |
+| Backend, Templates, API oder Datenbanklogik          | ja               | nein          |
+| Allgemeines CSS oder JavaScript                      | ja               | nein          |
+| `.platform-android`-CSS oder `IS_ANDROID_APP`-Logik  | ja               | nein          |
+| App-Icon, Splashscreen, App-Name oder Berechtigungen | nein             | ja            |
+| Capacitor-Plugin, native Android-Datei oder App-ID   | nein             | ja            |
+| Produktionsdomain in der Android-App                 | nein             | ja            |
+
+Bei Änderungen an statischen Dateien müssen außerdem die verwendeten
+Asset-/Service-Worker-Versionen erhöht werden, damit Browser und Android keine
+veralteten Dateien aus dem Cache verwenden.
+
 ### Änderungen testen und versionieren
 
 Im Projektverzeichnis:
@@ -75,6 +93,30 @@ Browser und installierte Produktions-App laden die aktualisierte Oberfläche
 direkt vom VPS. Datenbank, Konten, `.env` und Caddy-Zertifikate bleiben beim
 Neubau der Container erhalten. Niemals `docker compose down -v` verwenden,
 wenn die Produktionsdaten erhalten bleiben sollen.
+
+### Benutzerkonten anlegen
+
+Die lokale Entwicklungsdatenbank und die Produktionsdatenbank auf dem VPS sind
+getrennt. Deshalb hängt der richtige Befehl von der gewünschten Umgebung ab.
+
+Lokal ein Testkonto anlegen:
+
+```bash
+docker compose exec app flask --app run.py user create led
+```
+
+Ein echtes Konto auf dem öffentlichen VPS anlegen:
+
+```bash
+ssh bookypedia-vps
+cd /opt/bookypedia
+docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+  flask --app run.py user create freund
+```
+
+Für Freunde wird immer der zweite Befehl auf dem VPS verwendet. Das Konto
+erhält eine eigene Bibliothek und muss das vorläufige Passwort beim ersten
+Login ändern.
 
 ### Android-Produktions-App neu bauen
 
@@ -132,14 +174,15 @@ Browser. Mit einem per USB verbundenen Android-Handy oder einem Emulator:
 ```bash
 docker compose up --build -d
 cd mobile
-npm install
 npm run run
 ```
 
 Auf einem physischen Handy muss zuvor in den Entwickleroptionen USB-Debugging
 aktiviert und die Verbindung zu diesem PC bestätigt werden. Das Startskript
 richtet über ADB eine lokale Portweiterleitung ein, synchronisiert Capacitor und
-installiert die App. Weitere Hinweise stehen in `mobile/README.md`.
+installiert die App. Vor dem ersten Start beziehungsweise nach Änderungen an
+den Node-Abhängigkeiten einmal `npm install` im Verzeichnis `mobile` ausführen.
+Weitere Hinweise stehen in `mobile/README.md`.
 
 Die Android-Konfiguration erlaubt unverschlüsseltes HTTP ausschließlich zu
 `localhost:8000`. Für den VPS wird beim Build die HTTPS-Domain gesetzt; Login
@@ -201,17 +244,23 @@ LOG_LEVEL=DEBUG docker compose up
 
 Mit `LOG_FORMAT=text` kann lokal statt JSON ein kompakteres Textformat verwendet werden. Logs enthalten technische IDs, Statuswerte und Laufzeiten, aber keine Suchbegriffe, Buchtitel, ISBNs oder Bewertungstexte. Jede HTTP-Antwort enthält außerdem eine `X-Request-ID`, über die sich ein Fehler im Log wiederfinden lässt.
 
-## Konten verwalten
+## Konten auf dem VPS verwalten
 
 Es gibt bewusst keine öffentliche Registrierung. Konten werden ausschließlich
-auf dem Server verwaltet:
+auf dem Produktionsserver verwaltet. Alle folgenden Befehle werden unter
+`/opt/bookypedia` auf dem VPS ausgeführt:
 
 ```bash
-docker compose exec app flask --app run.py user list
-docker compose exec app flask --app run.py user create freund
-docker compose exec app flask --app run.py user reset-password freund
-docker compose exec app flask --app run.py user deactivate freund
-docker compose exec app flask --app run.py user activate freund
+docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+  flask --app run.py user list
+docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+  flask --app run.py user create freund
+docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+  flask --app run.py user reset-password freund
+docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+  flask --app run.py user deactivate freund
+docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+  flask --app run.py user activate freund
 ```
 
 Passwörter werden nicht als Kommandozeilenargument übergeben und mit scrypt

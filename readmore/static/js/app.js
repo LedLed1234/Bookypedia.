@@ -159,7 +159,7 @@ const LANGUAGE_LABELS = {
   por: "Portugiesisch",
 };
 const FALLBACK_APP_CONFIG = {
-  defaults: { theme: "green", searchResultLimit: 4, startView: "all" },
+  defaults: { theme: "blue-white", searchResultLimit: 4, startView: "all" },
   options: {
     themes: [
       { value: "red", label: "Red" },

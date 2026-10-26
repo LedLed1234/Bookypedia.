@@ -1,6 +1,6 @@
 {
   "defaults": {
-    "theme": "green",
+    "theme": "blue-white",
     "searchResultLimit": 4,
     "startView": "all"
   },

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de" data-theme="green">
+<html lang="de" data-theme="blue-white">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -21,6 +21,11 @@
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
   <script>
     try {
+      const themeDefaultVersion = "blue-white-v1";
+      if (localStorage.getItem("bookypedia-theme-default-version") !== themeDefaultVersion) {
+        localStorage.setItem("bookypedia-theme", "blue-white");
+        localStorage.setItem("bookypedia-theme-default-version", themeDefaultVersion);
+      }
       const savedTheme = localStorage.getItem("bookypedia-theme");
       if (["red", "blue-white", "green", "brown", "cozy", "light"].includes(savedTheme)) {
         document.documentElement.dataset.theme = savedTheme;
@@ -28,7 +33,7 @@
     } catch (_error) {}
   </script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=35">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=38"></script>
+  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=39"></script>
 </head>
 <body>
   <header class="site-header">
@@ -46,11 +51,11 @@
             <span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#B85C5C"></i></span>
             <span>Red</span><span class="theme-check" aria-hidden="true">✓</span>
           </button>
-          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="blue-white">
+          <button class="theme-option" type="button" role="menuitemradio" aria-checked="true" data-theme-option="blue-white">
             <span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#8392BD"></i></span>
             <span>Blue-white</span><span class="theme-check" aria-hidden="true">✓</span>
           </button>
-          <button class="theme-option" type="button" role="menuitemradio" aria-checked="true" data-theme-option="green">
+          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="green">
             <span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#7FA38A"></i></span>
             <span>Green</span><span class="theme-check" aria-hidden="true">✓</span>
           </button>
