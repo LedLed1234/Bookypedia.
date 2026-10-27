@@ -54,7 +54,9 @@ In `readmore/static/config.json`:
 ```
 
 Erlaubte Werte: `open_library` und `google_books`. Sind beide Werte gleich,
-wird kein Fallback aufgerufen. Nach einer Änderung Container neu bauen.
+wird kein Fallback aufgerufen. Diese Werte sind die Standardauswahl; Haupt- und
+Fallback-Katalog lassen sich pro Gerät zusätzlich unter **Settings** wählen.
+Nach einer Änderung an `config.json` Container neu bauen.
 
 Für einen zuverlässigen Google-Books-Zugriff den API-Key ausschließlich in
 `.env` speichern (nicht in `config.json`):

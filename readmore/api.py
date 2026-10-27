@@ -11,7 +11,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 
 from .db import get_db
 from .metadata_cache import enqueue_metadata_lookup, metadata_lookup_status
-from .providers import KNOWN_PROVIDERS, get_provider
+from .providers import KNOWN_PROVIDERS, PrimaryFallbackProvider, get_provider
 from .providers.base import ProviderUnavailable
 from .series_cache import enqueue_series_lookup, get_cached_series, wake_series_worker
 from .text import identity_key, normalize_text
@@ -271,16 +271,31 @@ def search_books():
         except (TypeError, ValueError):
             limit = SEARCH_RESULT_LIMIT
         limit = min(20, max(1, limit))
+    primary_provider = request.args.get("primary_provider", "").strip()
+    fallback_provider = request.args.get("fallback_provider", "").strip()
+    if primary_provider and primary_provider not in KNOWN_PROVIDERS:
+        return validation_error("Ungültiger Hauptanbieter.")
+    if fallback_provider and fallback_provider not in KNOWN_PROVIDERS:
+        return validation_error("Ungültiger Fallback-Anbieter.")
+    selected_primary = primary_provider or current_app.config["BOOK_PROVIDER"]
+    selected_fallback = fallback_provider or current_app.config["BOOK_FALLBACK_PROVIDER"]
     try:
-        provider = get_provider()
+        provider = (
+            PrimaryFallbackProvider(
+                selected_primary,
+                selected_fallback,
+            )
+            if primary_provider or fallback_provider
+            else get_provider()
+        )
         results = cached_provider_search(provider, query, suggestions=suggestions, limit=limit)
     except ProviderUnavailable as error:
         current_app.logger.warning(
             "Buchsuche beim Anbieter fehlgeschlagen",
             extra={
                 "event": "book_search_failed",
-                "provider": current_app.config["BOOK_PROVIDER"],
-                "fallback_provider": current_app.config["BOOK_FALLBACK_PROVIDER"],
+                "provider": selected_primary,
+                "fallback_provider": selected_fallback,
                 "error_type": type(error).__name__,
             },
         )

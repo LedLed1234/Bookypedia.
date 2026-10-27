@@ -347,7 +347,7 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .manual-section-heading { display: grid; gap: 3px; }
 .manual-section-heading h3 { margin: 0; color: var(--text); font-size: .95rem; }
 .manual-section-heading p { margin: 0; color: var(--muted); font-size: .72rem; }
-.settings-dialog { width: min(590px, calc(100% - 28px)); border: 1px solid var(--theme-border); }
+.settings-dialog { width: min(590px, calc(100% - 28px)); overflow-y: auto; border: 1px solid var(--theme-border); }
 .settings-dialog-shell { gap: 20px; }
 .settings-list { display: grid; gap: 9px; }
 .mobile-text-size-setting { display: none !important; }
@@ -411,6 +411,7 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .book-subject-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .book-subject-list span { padding: 5px 8px; color: var(--muted); background: var(--surface-tint); border: 1px solid var(--theme-border); border-radius: 99px; font-size: .68rem; }
 .book-info-actions { justify-content: flex-start; }
+.book-info-source { margin: -8px 0 0; color: var(--muted); font-size: .64rem; text-align: right; opacity: .78; }
 @keyframes book-view-enter { from { opacity: 0; transform: translateX(6px); } to { opacity: 1; transform: translateX(0); } }
 .reading-history { display: grid; gap: 8px; }
 .reading-history[hidden] { display: none; }

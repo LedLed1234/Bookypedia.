@@ -89,6 +89,8 @@ const state = {
   seriesIndexLoading: false,
   sort: "added_desc",
   searchResultLimit: 4,
+  primaryProvider: "open_library",
+  fallbackProvider: "google_books",
   readingHistoryExpanded: false,
 };
 const grid = document.querySelector("#book-grid");
@@ -123,6 +125,7 @@ const bookDialogInfoButton = document.querySelector("#book-dialog-info");
 const bookInfoBackButton = document.querySelector("#book-info-back");
 const bookInfoGrid = document.querySelector("#book-info-grid");
 const bookInfoStatus = document.querySelector("#book-info-status");
+const bookInfoSource = document.querySelector("#book-info-source");
 const bookDescriptionSection = document.querySelector("#book-description");
 const bookDescriptionToggle = document.querySelector("#book-description-toggle");
 const seriesHeading = document.querySelector("#series-heading");
@@ -137,6 +140,8 @@ const themeOptions = document.querySelectorAll("[data-theme-option]");
 const settingsDialog = document.querySelector("#settings-dialog");
 const settingsThemeSelect = document.querySelector("#settings-theme");
 const settingsSearchLimitSelect = document.querySelector("#settings-search-limit");
+const settingsPrimaryProviderSelect = document.querySelector("#settings-primary-provider");
+const settingsFallbackProviderSelect = document.querySelector("#settings-fallback-provider");
 const settingsStartViewSelect = document.querySelector("#settings-start-view");
 const settingsMobileTextSizeSelect = document.querySelector("#settings-mobile-text-size");
 const THEME_COLORS = {
@@ -172,6 +177,11 @@ const LANGUAGE_LABELS = {
   por: "Portugiesisch",
 };
 const FALLBACK_APP_CONFIG = {
+  catalogue: {
+    mode: "primary_fallback",
+    primaryProvider: "open_library",
+    fallbackProvider: "google_books",
+  },
   defaults: { theme: "blue-white", searchResultLimit: 4, startView: "all", mobileTextSize: 3 },
   options: {
     themes: [
@@ -183,6 +193,10 @@ const FALLBACK_APP_CONFIG = {
       { value: "light", label: "Light" },
     ],
     searchResultLimits: [4, 6, 8, 12],
+    bookProviders: [
+      { value: "open_library", label: "Open Library" },
+      { value: "google_books", label: "Google Books" },
+    ],
     mobileTextSizes: [
       { value: 1, label: "Stufe 1 – Kompakt" },
       { value: 2, label: "Stufe 2" },
@@ -217,6 +231,7 @@ async function loadAppConfig() {
     if (!response.ok) throw new Error("Konfiguration nicht verfügbar");
     const loaded = await response.json();
     appConfig = {
+      catalogue: { ...FALLBACK_APP_CONFIG.catalogue, ...(loaded.catalogue || {}) },
       defaults: { ...FALLBACK_APP_CONFIG.defaults, ...(loaded.defaults || {}) },
       options: { ...FALLBACK_APP_CONFIG.options, ...(loaded.options || {}) },
     };
@@ -230,6 +245,8 @@ async function loadAppConfig() {
   );
   populateSelect(settingsStartViewSelect, appConfig.options.startViews);
   populateSelect(settingsMobileTextSizeSelect, appConfig.options.mobileTextSizes);
+  populateSelect(settingsPrimaryProviderSelect, appConfig.options.bookProviders);
+  populateSelect(settingsFallbackProviderSelect, appConfig.options.bookProviders);
 }
 
 function setAppearanceMenu(open) {
@@ -284,6 +301,23 @@ function applySearchResultLimit(value, persist = true) {
   searchCache.clear();
   if (persist) {
     try { localStorage.setItem("bookypedia-search-limit", String(limit)); } catch (_error) {}
+  }
+}
+
+function applyBookProviders(primary, fallback, persist = true) {
+  const allowed = new Set(appConfig.options.bookProviders.map(({ value }) => String(value)));
+  const defaultPrimary = appConfig.catalogue.primaryProvider || "open_library";
+  const defaultFallback = appConfig.catalogue.fallbackProvider || defaultPrimary;
+  state.primaryProvider = allowed.has(primary) ? primary : defaultPrimary;
+  state.fallbackProvider = allowed.has(fallback) ? fallback : defaultFallback;
+  settingsPrimaryProviderSelect.value = state.primaryProvider;
+  settingsFallbackProviderSelect.value = state.fallbackProvider;
+  searchCache.clear();
+  if (persist) {
+    try {
+      localStorage.setItem("bookypedia-primary-provider", state.primaryProvider);
+      localStorage.setItem("bookypedia-fallback-provider", state.fallbackProvider);
+    } catch (_error) {}
   }
 }
 
@@ -739,12 +773,14 @@ function renderSuggestions(query, { loading = false, failed = false } = {}) {
 
 async function cachedBookSearch(query, signal, suggestions = false) {
   const resultLimit = suggestions ? 6 : state.searchResultLimit;
-  const key = `${suggestions ? "suggest" : "search"}:${resultLimit}:${normalizeSearch(query)}`;
+  const providers = `${state.primaryProvider}:${state.fallbackProvider}`;
+  const key = `${providers}:${suggestions ? "suggest" : "search"}:${resultLimit}:${normalizeSearch(query)}`;
   const cached = searchCache.get(key);
   if (cached && Date.now() - cached.savedAt < SEARCH_CACHE_TTL) return cached.results;
   const mode = suggestions ? "&suggest=1" : "";
   const limit = suggestions ? "" : `&limit=${resultLimit}`;
-  const payload = await api(`/api/search?q=${encodeURIComponent(query)}${mode}${limit}`, { signal });
+  const providerQuery = `&primary_provider=${encodeURIComponent(state.primaryProvider)}&fallback_provider=${encodeURIComponent(state.fallbackProvider)}`;
+  const payload = await api(`/api/search?q=${encodeURIComponent(query)}${mode}${limit}${providerQuery}`, { signal });
   // Nur echte Treffer cachen. Eine vorübergehend leere Antwort soll beim
   // nächsten Versuch wieder Open Library erreichen.
   if (payload.results.length) searchCache.set(key, { results: payload.results, savedAt: Date.now() });
@@ -1229,8 +1265,17 @@ function displayLanguage(value) {
   return LANGUAGE_LABELS[code] || value;
 }
 
+function displayProvider(value) {
+  return {
+    open_library: "Open Library",
+    google_books: "Google Books",
+    manual: "Manuell erfasst",
+  }[value] || "Unbekannter Katalog";
+}
+
 function renderBookInfo() {
   const metadata = state.detailMetadata || state.infoBook || state.detailBook || {};
+  const provider = metadata.provider || state.infoBook?.provider || state.detailBook?.provider || "manual";
   const fields = [
     ["ISBN", metadata.isbn],
     ["Verlag", metadata.publisher],
@@ -1280,6 +1325,7 @@ function renderBookInfo() {
   } else {
     bookInfoStatus.textContent = "";
   }
+  bookInfoSource.textContent = `Quelle: ${displayProvider(provider)}`;
 }
 
 function updateDescriptionExpansion(description) {
@@ -2201,6 +2247,15 @@ settingsSearchLimitSelect.addEventListener("change", () => {
   applySearchResultLimit(settingsSearchLimitSelect.value);
   showToast(`Künftig werden ${state.searchResultLimit} Suchergebnisse angezeigt.`);
 });
+function updateBookProviderSettings() {
+  applyBookProviders(settingsPrimaryProviderSelect.value, settingsFallbackProviderSelect.value);
+  const fallbackText = state.primaryProvider === state.fallbackProvider
+    ? "Fallback deaktiviert."
+    : `${settingsPrimaryProviderSelect.selectedOptions[0].textContent} → ${settingsFallbackProviderSelect.selectedOptions[0].textContent}`;
+  showToast(`Buchsuche: ${fallbackText}`);
+}
+settingsPrimaryProviderSelect.addEventListener("change", updateBookProviderSettings);
+settingsFallbackProviderSelect.addEventListener("change", updateBookProviderSettings);
 settingsStartViewSelect.addEventListener("change", () => applyStartView(settingsStartViewSelect.value));
 settingsMobileTextSizeSelect.addEventListener("change", () => {
   applyMobileTextSize(settingsMobileTextSizeSelect.value);
@@ -2280,18 +2335,23 @@ async function initializeApp() {
   let storedTheme = appConfig.defaults.theme;
   let storedSort = "added_desc";
   let storedSearchLimit = appConfig.defaults.searchResultLimit;
+  let storedPrimaryProvider = appConfig.catalogue.primaryProvider;
+  let storedFallbackProvider = appConfig.catalogue.fallbackProvider;
   let storedStartView = appConfig.defaults.startView;
   let storedMobileTextSize = appConfig.defaults.mobileTextSize;
   try {
     storedTheme = localStorage.getItem("bookypedia-theme") || storedTheme;
     storedSort = localStorage.getItem("bookypedia-sort") || storedSort;
     storedSearchLimit = localStorage.getItem("bookypedia-search-limit") || storedSearchLimit;
+    storedPrimaryProvider = localStorage.getItem("bookypedia-primary-provider") || storedPrimaryProvider;
+    storedFallbackProvider = localStorage.getItem("bookypedia-fallback-provider") || storedFallbackProvider;
     storedStartView = localStorage.getItem("bookypedia-start-view") || storedStartView;
     storedMobileTextSize = localStorage.getItem("bookypedia-mobile-text-size") || storedMobileTextSize;
   } catch (_error) {}
   applyTheme(storedTheme, false);
   applySort(storedSort, false);
   applySearchResultLimit(storedSearchLimit, false);
+  applyBookProviders(storedPrimaryProvider, storedFallbackProvider, false);
   applyStartView(storedStartView, false);
   applyMobileTextSize(storedMobileTextSize, false);
 

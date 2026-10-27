@@ -517,6 +517,34 @@ def test_search_result_limit_can_be_configured_per_request(client, monkeypatch):
     assert len(response.get_json()["results"]) == 8
 
 
+def test_search_provider_pair_can_be_selected_per_device(client, monkeypatch):
+    api_module = importlib.import_module("readmore.api")
+    selected = []
+
+    class FakeProviderPair:
+        def __init__(self, primary, fallback):
+            selected.append((primary, fallback))
+
+        def search(self, query, limit):
+            return [{"title": query, "authors": [], "provider": "google_books"}]
+
+    monkeypatch.setattr(api_module, "PrimaryFallbackProvider", FakeProviderPair)
+    response = client.get(
+        "/api/search?q=Dune&primary_provider=google_books&fallback_provider=open_library"
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["results"][0]["title"] == "Dune"
+    assert selected == [("google_books", "open_library")]
+
+
+def test_search_rejects_unknown_provider(client):
+    response = client.get("/api/search?q=Dune&primary_provider=unknown")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "Ungültiger Hauptanbieter."
+
+
 def test_suggestions_use_provider_prefix_search(client, monkeypatch):
     expected = [{"title": "Elantris", "authors": ["Brandon Sanderson"]}]
 
@@ -1262,6 +1290,8 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="settings-dialog"' in html
     assert 'id="settings-theme"' in html
     assert 'id="settings-search-limit"' in html
+    assert 'id="settings-primary-provider"' in html
+    assert 'id="settings-fallback-provider"' in html
     assert 'id="settings-start-view"' in html
     assert 'id="settings-mobile-text-size"' in html
     assert 'class="settings-version"' in html
@@ -1277,6 +1307,7 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="book-dialog-main-view"' in html
     assert 'id="book-dialog-info-view"' in html
     assert 'id="book-info-back"' in html
+    assert 'id="book-info-source"' in html
     assert 'id="book-description-toggle"' in html
     assert 'aria-controls="book-description-copy"' in html
     assert 'id="book-dialog-back"' not in html
@@ -1300,6 +1331,10 @@ def test_frontend_exposes_all_appearance_palettes(client):
         "mobileTextSize": 3,
     }
     assert config["options"]["searchResultLimits"] == [4, 6, 8, 12]
+    assert [provider["value"] for provider in config["options"]["bookProviders"]] == [
+        "open_library",
+        "google_books",
+    ]
     assert [size["value"] for size in config["options"]["mobileTextSizes"]] == [1, 2, 3, 4, 5]
     assert [view["value"] for view in config["options"]["startViews"]] == [
         "all",

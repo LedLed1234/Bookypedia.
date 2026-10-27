@@ -94,6 +94,11 @@ Im Modus `primary + fallback` wird der zweite Anbieter nur angefragt, wenn der
 erste keinen plausiblen Treffer liefert oder vorübergehend nicht erreichbar
 ist. Identische Anbieterwerte deaktivieren den Fallback.
 
+Die Konfigurationsdatei liefert die globalen Standardwerte. Benutzer können
+Haupt- und Fallback-Katalog in den Settings pro Browser beziehungsweise Gerät
+überschreiben. Die Auswahl liegt in `localStorage` und wird als erlaubte,
+serverseitig validierte Anbieterkennung an `/api/search` übergeben.
+
 Open Library unterscheidet zwischen:
 
 - Werk: sprachunabhängige Identität und Reihenbezug (`provider_book_id`)

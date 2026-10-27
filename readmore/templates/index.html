@@ -44,8 +44,8 @@
       }
     } catch (_error) {}
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=46">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=51"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=48">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=53"></script>
 </head>
 <body>
   <header class="site-header">
@@ -197,6 +197,18 @@
         <label class="settings-item" for="settings-search-limit">
           <span><strong>Suchergebnisse</strong><small>Anzahl der Bücher in der großen Ergebnisansicht</small></span>
           <select id="settings-search-limit">
+            <option>Wird geladen …</option>
+          </select>
+        </label>
+        <label class="settings-item" for="settings-primary-provider">
+          <span><strong>Hauptkatalog</strong><small>Wird bei jeder Buchsuche zuerst verwendet</small></span>
+          <select id="settings-primary-provider">
+            <option>Wird geladen …</option>
+          </select>
+        </label>
+        <label class="settings-item" for="settings-fallback-provider">
+          <span><strong>Fallback-Katalog</strong><small>Wird nur ohne guten Haupttreffer verwendet</small></span>
+          <select id="settings-fallback-provider">
             <option>Wird geladen …</option>
           </select>
         </label>
@@ -397,6 +409,7 @@
         <div class="dialog-actions book-info-actions">
           <button class="button button-secondary" id="book-info-back" type="button">← Zurück zu Buchdetails</button>
         </div>
+        <p class="book-info-source" id="book-info-source"></p>
       </div>
     </div>
   </dialog>

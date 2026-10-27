@@ -20,6 +20,10 @@
       { "value": "light", "label": "Light" }
     ],
     "searchResultLimits": [4, 6, 8, 12],
+    "bookProviders": [
+      { "value": "open_library", "label": "Open Library" },
+      { "value": "google_books", "label": "Google Books" }
+    ],
     "mobileTextSizes": [
       { "value": 1, "label": "Stufe 1 – Kompakt" },
       { "value": 2, "label": "Stufe 2" },
