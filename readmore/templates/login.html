@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101512">
-  <meta name="description" content="Bei Bookypedia anmelden.">
-  <title>Anmelden – Bookypedia.</title>
+  <meta name="description" content="Bei Epiloguehouse anmelden.">
+  <title>Anmelden – Epiloguehouse</title>
   <script>
     try {
       const android = window.Capacitor?.getPlatform?.() === "android" || navigator.userAgent.includes("BookypediaAndroid");
@@ -23,12 +23,15 @@
       if (["red", "blue-white", "green", "brown", "cozy", "light"].includes(savedTheme)) document.documentElement.dataset.theme = savedTheme;
     } catch (_error) {}
   </script>
-  <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=37">
+  <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=2">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=44">
 </head>
 <body class="auth-page">
   <main class="auth-shell">
-    <a class="auth-brand" href="{{ url_for('auth.login') }}">Bookypedia.</a>
+    <a class="auth-brand" href="{{ url_for('auth.login') }}">
+      <img class="auth-brand-logo" src="{{ url_for('static', filename='icons/epiloguehouse-logo-header.png') }}" alt="">
+      <span>Epiloguehouse</span>
+    </a>
     <section class="auth-card" aria-labelledby="login-title">
       <div class="auth-heading">
         <p class="eyebrow">Deine persönliche Bibliothek</p>

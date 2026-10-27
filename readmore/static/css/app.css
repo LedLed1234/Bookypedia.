@@ -106,9 +106,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   margin: 0 auto;
   padding: 0 24px;
 }
-.header-identity { min-width: 0; display: grid; gap: 1px; }
-.brand { overflow: hidden; color: var(--text); text-decoration: none; font-size: 1.12rem; font-weight: 800; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
-.header-greeting { overflow: hidden; color: var(--muted); font-size: .7rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.header-identity { min-width: 0; display: grid; gap: 0; }
+.brand { min-width: 0; display: flex; align-items: center; gap: 9px; overflow: hidden; color: var(--text); text-decoration: none; font-size: 1.12rem; font-weight: 800; letter-spacing: -.025em; white-space: nowrap; }
+.brand-logo { width: 52px; height: 36px; flex: 0 0 auto; object-fit: contain; border-radius: 7px; }
+.brand-name { overflow: hidden; text-overflow: ellipsis; }
+.header-greeting { overflow: hidden; margin-left: 61px; color: var(--muted); font-size: .7rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .appearance-picker { position: relative; }
 .appearance-menu {
@@ -357,7 +359,8 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 
 .auth-page { min-height: 100vh; }
 .auth-shell { width: min(460px, calc(100% - 32px)); min-height: 100vh; display: grid; align-content: center; gap: 22px; margin: 0 auto; padding: 48px 0; }
-.auth-brand { width: max-content; color: var(--text); text-decoration: none; font-size: 1.2rem; font-weight: 900; letter-spacing: -.03em; }
+.auth-brand { width: max-content; display: inline-flex; align-items: center; gap: 11px; color: var(--text); text-decoration: none; font-size: 1.2rem; font-weight: 900; letter-spacing: -.03em; }
+.auth-brand-logo { width: 64px; height: 45px; object-fit: contain; border-radius: 8px; }
 .auth-card { display: grid; gap: 24px; padding: clamp(24px, 7vw, 38px); background: var(--surface-tint); border: 1px solid var(--theme-border); border-radius: 18px; box-shadow: var(--shadow); }
 .auth-heading h1 { margin: 0 0 10px; font-size: clamp(1.8rem, 8vw, 2.45rem); }
 .auth-heading > p:last-child { margin: 0; color: var(--muted); font-size: .9rem; }
@@ -517,9 +520,10 @@ html.dialog-scroll-locked { overflow: hidden; }
 
 @media (max-width: 680px) {
   .site-header { height: 66px; padding-inline: 16px; }
-  .header-identity { max-width: 112px; }
-  .brand { font-size: .98rem; }
-  .header-greeting { font-size: .63rem; }
+  .header-identity { max-width: 158px; }
+  .brand { gap: 6px; font-size: .88rem; }
+  .brand-logo { width: 40px; height: 28px; border-radius: 5px; }
+  .header-greeting { margin-left: 46px; font-size: .61rem; }
   .header-actions { gap: 5px; }
   .site-header .button { padding-inline: 10px; }
   .appearance-label { display: none; }
