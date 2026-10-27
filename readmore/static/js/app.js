@@ -1611,9 +1611,15 @@ function renderSeriesDetails() {
     seriesContent.append(more);
   }
 
-  seriesNote.textContent = series.incomplete
-    ? "Hinweis: Diese Zuordnung stammt aus Schlagwörtern und kann unvollständig sein."
-    : "Reihendaten aus dem Buchkatalog. Einzelne Ausgaben oder Sonderbände können fehlen.";
+  if (series.source === "google_title") {
+    seriesNote.textContent = "Google Books hat diese Reihe aus Titel und Bandnummer abgeleitet. Die Liste kann unvollständig sein.";
+  } else if (series.source === "google_structured") {
+    seriesNote.textContent = "Google Books liefert die Reihenzuordnung strukturiert; einzelne Ausgaben können trotzdem fehlen.";
+  } else if (series.source === "subject") {
+    seriesNote.textContent = "Hinweis: Diese Zuordnung stammt aus Schlagwörtern und kann unvollständig sein.";
+  } else {
+    seriesNote.textContent = "Reihendaten aus dem Buchkatalog. Einzelne Ausgaben oder Sonderbände können fehlen.";
+  }
 }
 
 function seriesBookRow(book) {

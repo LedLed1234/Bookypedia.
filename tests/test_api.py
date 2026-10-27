@@ -472,6 +472,87 @@ def test_google_books_results_are_normalized(monkeypatch):
     assert result["cover_url"].startswith("https://")
 
 
+def test_google_books_uses_structured_series_information(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.google_books")
+
+    def volume(volume_id, title, position):
+        return {
+            "id": volume_id,
+            "volumeInfo": {
+                "title": title,
+                "authors": ["Test Author"],
+                "language": "de",
+                "seriesInfo": {
+                    "bookDisplayNumber": str(position),
+                    "shortSeriesBookTitle": title.split(": ", 1)[-1],
+                    "volumeSeries": [{
+                        "seriesId": "google-series-1",
+                        "orderNumber": position,
+                    }],
+                },
+            },
+        }
+
+    first = volume("volume-1", "Die Testchroniken 1: Der Anfang", 1)
+    second = volume("volume-2", "Die Testchroniken 2: Die Reise", 2)
+    unrelated = volume("volume-x", "Andere Reihe 1: Fremdes Buch", 1)
+    unrelated["volumeInfo"]["seriesInfo"]["volumeSeries"][0]["seriesId"] = "other-series"
+
+    provider = provider_module.GoogleBooksProvider("key")
+    monkeypatch.setattr(
+        provider,
+        "_get_json",
+        lambda url, params=None: first if url.endswith("/volume-1") else {
+            "items": [second, unrelated, first]
+        },
+    )
+
+    series = provider.series("volume-1", ["Test Author"])
+
+    assert series["name"] == "Die Testchroniken"
+    assert series["provider_series_id"] == "google-series-1"
+    assert series["current_position"] == 1
+    assert series["source"] == "google_structured"
+    assert [book["provider_book_id"] for book in series["books"]] == ["volume-1", "volume-2"]
+    assert [book["series_position"] for book in series["books"]] == [1, 2]
+
+
+def test_google_books_infers_tearbird_series_from_titles(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.google_books")
+    titles = [
+        "Das Blut der Herzlosen – Die Legende vom Tränenvogel 1",
+        "Der träumende Krieger – Die Legende vom Tränenvogel 2",
+        "Der Feuergeist – Die Legende vom Tränenvogel 3",
+        "Die Suche nach dem König – Die Legende vom Tränenvogel 4",
+    ]
+    volumes = [
+        {
+            "id": f"tearbird-{position}",
+            "volumeInfo": {
+                "title": title,
+                "authors": ["Young-do Lee"],
+                "language": "de",
+            },
+        }
+        for position, title in enumerate(titles, 1)
+    ]
+    provider = provider_module.GoogleBooksProvider("key")
+    monkeypatch.setattr(
+        provider,
+        "_get_json",
+        lambda url, params=None: volumes[0] if url.endswith("/tearbird-1") else {
+            "items": volumes
+        },
+    )
+
+    series = provider.series("tearbird-1", ["Young-do Lee"])
+
+    assert series["name"] == "Die Legende vom Tränenvogel"
+    assert series["provider_series_id"] is None
+    assert series["source"] == "google_title"
+    assert [book["series_position"] for book in series["books"]] == [1, 2, 3, 4]
+
+
 def test_catalogue_metadata_uses_provider_from_result(client, monkeypatch):
     api_module = importlib.import_module("readmore.api")
     calls = []
@@ -1259,6 +1340,33 @@ def test_existing_books_are_queued_when_app_starts(tmp_path):
             "SELECT status FROM metadata_lookups WHERE book_id = 1"
         ).fetchone()["status"]
     assert metadata_status == "pending"
+
+
+def test_old_google_no_series_result_is_requeued_once_after_upgrade(tmp_path):
+    database = tmp_path / "google-series-upgrade.db"
+    first_app = create_app({"TESTING": True, "DATABASE": str(database)})
+    with first_app.app_context():
+        db = importlib.import_module("readmore.db").get_db()
+        db.execute(
+            """
+            INSERT INTO series_lookups (
+                provider, provider_book_id, authors, status, next_attempt_at
+            ) VALUES ('google_books', 'tearbird-1', 'Young-do Lee', 'no_series', 9999999999)
+            """
+        )
+        db.execute("PRAGMA user_version = 0")
+        db.commit()
+
+    restarted_app = create_app({"TESTING": True, "DATABASE": str(database)})
+    with restarted_app.app_context():
+        db = importlib.import_module("readmore.db").get_db()
+        lookup = db.execute(
+            "SELECT status, next_attempt_at FROM series_lookups WHERE provider_book_id = 'tearbird-1'"
+        ).fetchone()
+        schema_version = db.execute("PRAGMA user_version").fetchone()[0]
+
+    assert dict(lookup) == {"status": "pending", "next_attempt_at": 0}
+    assert schema_version == 1
 
 
 def test_frontend_exposes_all_appearance_palettes(client):

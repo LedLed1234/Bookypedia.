@@ -113,6 +113,14 @@ Jeder Katalogtreffer und jedes gespeicherte Buch trägt zusätzlich den Namen
 seines Anbieters. Dadurch werden Google-Books-IDs bei späteren Metadaten- und
 Hintergrundabfragen nicht versehentlich an Open Library geschickt.
 
+Google Books liefert bei einem Teil der Datensätze `volumeInfo.seriesInfo` mit
+`seriesId` und Bandnummer. Der Provider verwendet diese Struktur bevorzugt und
+sucht weitere Ausgaben anhand von Reihentitel und Autor. Fehlt `seriesInfo`,
+werden nur eindeutige Titelmuster mit Bandnummer vorsichtig als Reihe erkannt.
+Da Google keine vollständige Serienauflistung anhand der `seriesId` anbietet,
+werden Google-Reihen als potenziell unvollständig gekennzeichnet und wie alle
+anderen Reihenergebnisse in SQLite gecacht.
+
 ## Asynchrone Metadaten und Reihen
 
 Beim Hinzufügen eines Buches wird zuerst der Bibliothekseintrag gespeichert.

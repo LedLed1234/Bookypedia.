@@ -280,6 +280,22 @@ def init_db():
         """
     )
 
+    # Google Books wurde zunächst ohne Reihenunterstützung angebunden. Bereits
+    # als "keine Reihe" gecachte Google-Bücher werden nach diesem Upgrade genau
+    # einmal neu geprüft; PRAGMA user_version verhindert Wiederholungen bei
+    # jedem App-Start.
+    schema_version = db.execute("PRAGMA user_version").fetchone()[0]
+    if schema_version < 1:
+        db.execute(
+            """
+            UPDATE series_lookups
+            SET status = 'pending', next_attempt_at = 0, locked_at = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE provider = 'google_books' AND status = 'no_series'
+            """
+        )
+        db.execute("PRAGMA user_version = 1")
+
     # Alte Datensätze können aus Versionen stammen, die spätere Meilensteine
     # beim Zurückstufen behalten haben. Die aktuelle Statushierarchie wird
     # deshalb auch für bereits gespeicherte Bücher einmalig/invariant repariert.
