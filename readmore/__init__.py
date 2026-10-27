@@ -1,5 +1,7 @@
+import json
 import os
 from datetime import timedelta
+from pathlib import Path
 
 from flask import Flask, g, jsonify, redirect, render_template, request, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -9,7 +11,40 @@ from .auth import create_user, init_auth, login_required
 from .db import get_db, init_app as init_database
 from .logging_config import configure_logging, register_request_logging
 from .metadata_cache import enqueue_existing_metadata
+from .providers import KNOWN_PROVIDERS
 from .series_cache import enqueue_existing_books, start_series_worker
+
+
+def _build_version():
+    configured = str(os.environ.get("APP_VERSION") or "").strip()
+    if configured:
+        return configured[:64]
+    version_file = Path(__file__).resolve().parent.parent / ".build-version"
+    try:
+        version = version_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "development"
+    return version[:64] or "development"
+
+
+def _catalogue_settings():
+    config_path = Path(__file__).resolve().parent / "static" / "config.json"
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f"App-Konfiguration konnte nicht gelesen werden: {config_path}") from error
+    catalogue = payload.get("catalogue") or {}
+    mode = str(catalogue.get("mode") or "primary_fallback").strip()
+    if mode != "primary_fallback":
+        raise RuntimeError(f"Noch nicht unterstützter Buchkatalog-Modus: {mode}")
+    primary = str(catalogue.get("primaryProvider") or "open_library").strip()
+    fallback = str(catalogue.get("fallbackProvider") or primary).strip()
+    primary = str(os.environ.get("BOOK_PROVIDER") or primary).strip()
+    fallback = str(os.environ.get("BOOK_FALLBACK_PROVIDER") or fallback).strip()
+    unknown = {name for name in (primary, fallback) if name not in KNOWN_PROVIDERS}
+    if unknown:
+        raise RuntimeError(f"Unbekannter Buchanbieter in config.json: {', '.join(sorted(unknown))}")
+    return mode, primary, fallback
 
 
 def create_app(test_config=None):
@@ -17,11 +52,14 @@ def create_app(test_config=None):
     configured_secret = os.environ.get("SECRET_KEY")
     if app_environment == "production" and not configured_secret:
         raise RuntimeError("SECRET_KEY muss in der Produktionsumgebung gesetzt sein.")
+    provider_mode, primary_provider, fallback_provider = _catalogue_settings()
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_mapping(
         SECRET_KEY=configured_secret or "bookypedia-local-development-only",
         DATABASE=os.environ.get("DATABASE_PATH", os.path.join(app.instance_path, "readmore.db")),
-        BOOK_PROVIDER=os.environ.get("BOOK_PROVIDER", "open_library"),
+        BOOK_PROVIDER=primary_provider,
+        BOOK_FALLBACK_PROVIDER=fallback_provider,
+        BOOK_PROVIDER_MODE=provider_mode,
         SERIES_WORKER_ENABLED=os.environ.get("SERIES_WORKER_ENABLED", "1") != "0",
         SERIES_WORKER_POLL_INTERVAL=1.0,
         LOG_LEVEL=os.environ.get("LOG_LEVEL", "INFO"),
@@ -31,6 +69,7 @@ def create_app(test_config=None):
         MAX_FORM_MEMORY_SIZE=64 * 1024,
         MAX_FORM_PARTS=50,
         APP_ENV=app_environment,
+        BUILD_VERSION=_build_version(),
         CSRF_ENABLED=True,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SECURE=os.environ.get(
@@ -72,9 +111,7 @@ def create_app(test_config=None):
             app.config["TEST_USER_ID"] = user_id
     with app.app_context():
         queued_books = enqueue_existing_books(get_db(), provider=app.config["BOOK_PROVIDER"])
-        queued_metadata = enqueue_existing_metadata(
-            get_db(), provider=app.config["BOOK_PROVIDER"]
-        )
+        queued_metadata = enqueue_existing_metadata(get_db(), provider=app.config["BOOK_PROVIDER"])
     app.register_blueprint(api, url_prefix="/api")
 
     @app.get("/")
@@ -82,11 +119,11 @@ def create_app(test_config=None):
     def index():
         if g.user["password_change_required"]:
             return redirect(url_for("auth.change_password"))
-        return render_template("index.html")
+        return render_template("index.html", build_version=app.config["BUILD_VERSION"])
 
     @app.get("/health")
     def health():
-        return jsonify(status="ok")
+        return jsonify(status="ok", version=app.config["BUILD_VERSION"])
 
     @app.get("/service-worker.js")
     def service_worker():
@@ -126,9 +163,11 @@ def create_app(test_config=None):
         extra={
             "event": "app_started",
             "provider": app.config["BOOK_PROVIDER"],
+            "fallback_provider": app.config["BOOK_FALLBACK_PROVIDER"],
             "queued_books": queued_books,
             "queued_metadata": queued_metadata,
             "worker_enabled": app.config["SERIES_WORKER_ENABLED"],
+            "app_version": app.config["BUILD_VERSION"],
         },
     )
 

@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
 
 
+class ProviderUnavailable(RuntimeError):
+    """Raised when an external catalogue cannot answer a request right now."""
+
+
 class BookProvider(ABC):
     """Small boundary that keeps third-party catalogue formats out of the app."""
 

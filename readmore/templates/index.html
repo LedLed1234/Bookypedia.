@@ -44,8 +44,8 @@
       }
     } catch (_error) {}
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=45">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=50"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=46">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=51"></script>
 </head>
 <body>
   <header class="site-header">
@@ -220,6 +220,9 @@
           <button class="button button-secondary" type="submit">Abmelden</button>
         </form>
       </div>
+      <p class="settings-version" title="Build-Version">
+        <span>Version</span><code>{{ build_version }}</code>
+      </p>
     </div>
   </dialog>
 

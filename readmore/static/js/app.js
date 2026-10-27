@@ -490,28 +490,41 @@ function fuzzyBookScore(book, query) {
 }
 
 function suggestionIdentity(book) {
-  return book.provider_book_id || book.isbn || normalizeSearch(`${book.title}|${authorText(book)}`);
+  return book.provider_book_id
+    ? `${book.provider || "open_library"}:${book.provider_book_id}`
+    : book.isbn || normalizeSearch(`${book.title}|${authorText(book)}`);
 }
 
 function metadataIdentityForBook(book) {
-  return book.provider_edition_id
-    || book.isbn
-    || suggestionIdentity(book);
+  if (book.provider_edition_id) {
+    return `${book.provider || "open_library"}:${book.provider_edition_id}`;
+  }
+  return book.isbn || suggestionIdentity(book);
 }
 
 function catalogueResultIdentity(book) {
-  return book.provider_edition_id
-    || book.isbn
-    || suggestionIdentity(book);
+  if (book.provider_edition_id) {
+    return `${book.provider || "open_library"}:${book.provider_edition_id}`;
+  }
+  return book.isbn || suggestionIdentity(book);
 }
 
 function booksDescribeSameWork(left, right) {
   if (!left || !right) return false;
-  if (left.provider_book_id && right.provider_book_id && left.provider_book_id === right.provider_book_id) return true;
+  if (sameProviderBook(left, right)) return true;
   if (normalizeSearch(left.title) !== normalizeSearch(right.title)) return false;
   const leftAuthors = new Set((left.authors || []).map(normalizeSearch).filter(Boolean));
   const rightAuthors = (right.authors || []).map(normalizeSearch).filter(Boolean);
   return !leftAuthors.size || !rightAuthors.length || rightAuthors.some((author) => leftAuthors.has(author));
+}
+
+function sameProviderBook(left, right) {
+  return Boolean(
+    left?.provider_book_id
+    && right?.provider_book_id
+    && (left.provider || "open_library") === (right.provider || "open_library")
+    && left.provider_book_id === right.provider_book_id
+  );
 }
 
 function booksDescribeSameEdition(left, right) {
@@ -563,7 +576,9 @@ function mergeLoadedBookMetadata(book, metadata) {
   [...state.books, ...state.searchResults, ...state.suggestions, ...state.remoteSuggestions]
     .forEach((candidate) => {
       if (!candidate || candidate === book) return;
-      if (!book?.provider_book_id || candidate.provider_book_id !== book.provider_book_id) return;
+      if (!book?.provider_book_id
+          || candidate.provider_book_id !== book.provider_book_id
+          || (candidate.provider || "open_library") !== (book.provider || "open_library")) return;
       const candidateEdition = candidate.provider_edition_id || "";
       if (candidateEdition && resolvedEdition && candidateEdition !== resolvedEdition) return;
       Object.assign(candidate, loaded);
@@ -1292,7 +1307,7 @@ async function loadBookMetadata(book, metadataIdentity) {
 
   const url = book.id
     ? `/api/books/${book.id}/metadata`
-    : `/api/metadata?provider_book_id=${encodeURIComponent(book.provider_book_id)}${book.provider_edition_id ? `&provider_edition_id=${encodeURIComponent(book.provider_edition_id)}` : ""}`;
+    : `/api/metadata?provider=${encodeURIComponent(book.provider || "open_library")}&provider_book_id=${encodeURIComponent(book.provider_book_id)}${book.provider_edition_id ? `&provider_edition_id=${encodeURIComponent(book.provider_edition_id)}` : ""}`;
   try {
     const payload = await api(url);
     if (metadataIdentityForBook(state.infoBook) !== metadataIdentity) return;
@@ -1396,7 +1411,7 @@ async function openBookDetails(book, initialView = "main") {
   try {
     const seriesUrl = detailBook.id
       ? `/api/books/${detailBook.id}/series`
-      : `/api/series?provider_book_id=${encodeURIComponent(detailBook.provider_book_id || "")}${(detailBook.authors || []).map((author) => `&author=${encodeURIComponent(author)}`).join("")}`;
+      : `/api/series?provider=${encodeURIComponent(detailBook.provider || "open_library")}&provider_book_id=${encodeURIComponent(detailBook.provider_book_id || "")}${(detailBook.authors || []).map((author) => `&author=${encodeURIComponent(author)}`).join("")}`;
     state.seriesRequestUrl = seriesUrl;
     const payload = await api(seriesUrl);
     if (suggestionIdentity(state.detailBook || {}) !== detailIdentity) return;
@@ -1508,7 +1523,7 @@ function renderSeriesDetails() {
     list.className = "series-list";
     if (state.detailBook) list.append(seriesBookRow(state.detailBook));
     seriesContent.append(list);
-    seriesNote.textContent = "Bei manuell angelegten Büchern und einigen Open-Library-Einträgen fehlen diese Daten.";
+    seriesNote.textContent = "Bei manuell angelegten Büchern und einigen Katalogeinträgen fehlen diese Daten.";
     return;
   }
 
@@ -1519,12 +1534,9 @@ function renderSeriesDetails() {
   }
 
   const books = [...series.books];
-  const includesCurrent = books.some((book) =>
-    book.provider_book_id && book.provider_book_id === state.detailBook?.provider_book_id
-  );
+  const includesCurrent = books.some((book) => sameProviderBook(book, state.detailBook));
   if (!includesCurrent && state.detailBook) books.unshift(state.detailBook);
-  const isCurrentBook = (book) =>
-    book.provider_book_id && book.provider_book_id === state.detailBook?.provider_book_id;
+  const isCurrentBook = (book) => sameProviderBook(book, state.detailBook);
   const visibleBooks = books.filter((book) => findCollectionBook(book) || isCurrentBook(book));
   const otherBooks = books.filter((book) => !findCollectionBook(book) && !isCurrentBook(book));
   const list = document.createElement("div");
@@ -1555,11 +1567,11 @@ function renderSeriesDetails() {
 
   seriesNote.textContent = series.incomplete
     ? "Hinweis: Diese Zuordnung stammt aus Schlagwörtern und kann unvollständig sein."
-    : "Reihendaten von Open Library. Einzelne Ausgaben oder Sonderbände können fehlen.";
+    : "Reihendaten aus dem Buchkatalog. Einzelne Ausgaben oder Sonderbände können fehlen.";
 }
 
 function seriesBookRow(book) {
-  const isCurrent = book.provider_book_id === state.detailBook?.provider_book_id;
+  const isCurrent = sameProviderBook(book, state.detailBook);
   const saved = findCollectionBook(book);
   const knownBook = saved || (isCurrent ? state.detailBook : null);
   const displayBook = enrichKnownBookMetadata(
@@ -1678,7 +1690,7 @@ function renderSearchResults() {
   if (!state.searchResults.length) {
     const message = document.createElement("div");
     message.className = "empty-state";
-    message.innerHTML = "<h3>Keine passenden Bücher gefunden</h3><p>Open Library liefert manchmal kurzzeitig keine Treffer. Versuche es erneut oder lege das Buch selbst an.</p>";
+    message.innerHTML = "<h3>Keine passenden Bücher gefunden</h3><p>Die Buchkataloge liefern manchmal kurzzeitig keine Treffer. Versuche es erneut oder lege das Buch selbst an.</p>";
     const actions = document.createElement("div");
     actions.className = "empty-state-actions";
     const retry = document.createElement("button");
@@ -1776,7 +1788,9 @@ function findCollectionBook(candidate) {
   if (!candidate) return null;
   const identity = `${candidate.title}|${authorText(candidate)}`.toLocaleLowerCase("de");
   return state.books.find((book) =>
-    (candidate.provider_book_id && book.provider_book_id === candidate.provider_book_id) ||
+    (candidate.provider_book_id
+      && (book.provider || "open_library") === (candidate.provider || "open_library")
+      && book.provider_book_id === candidate.provider_book_id) ||
     (candidate.isbn && book.isbn === candidate.isbn) ||
     `${book.title}|${authorText(book)}`.toLocaleLowerCase("de") === identity
   ) || null;
@@ -1903,7 +1917,7 @@ async function executeSearch(query) {
   button.disabled = true;
   button.textContent = "Suche …";
   searchPanel.hidden = false;
-  searchResults.innerHTML = '<div class="loading-state">Open Library wird durchsucht …</div>';
+  searchResults.innerHTML = '<div class="loading-state">Buchkatalog wird durchsucht …</div>';
   searchPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   try {
     const results = await cachedBookSearch(providerQuery);

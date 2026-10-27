@@ -9,6 +9,7 @@ from readmore.logging_config import JsonLogFormatter
 def test_request_id_is_returned_and_validated(client):
     supplied = client.get("/health", headers={"X-Request-ID": "bookypedia-test-42"})
     assert supplied.headers["X-Request-ID"] == "bookypedia-test-42"
+    assert supplied.get_json()["version"] == client.application.config["BUILD_VERSION"]
 
     generated = client.get("/health", headers={"X-Request-ID": "invalid id with spaces"})
     assert generated.headers["X-Request-ID"] != "invalid id with spaces"

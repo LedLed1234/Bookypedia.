@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS books (
     title TEXT NOT NULL,
     authors TEXT NOT NULL DEFAULT '',
     isbn TEXT,
+    provider TEXT NOT NULL DEFAULT 'manual',
     provider_book_id TEXT,
     provider_edition_id TEXT,
     cover_url TEXT,
@@ -175,6 +176,7 @@ def init_db():
         "owned_at": "TEXT",
         "reading_at": "TEXT",
         "read_at": "TEXT",
+        "provider": "TEXT NOT NULL DEFAULT 'manual'",
         "provider_edition_id": "TEXT",
         "original_title": "TEXT",
         "original_authors": "TEXT NOT NULL DEFAULT ''",
@@ -190,12 +192,23 @@ def init_db():
     for column, definition in migrations.items():
         if column not in columns:
             db.execute(f"ALTER TABLE books ADD COLUMN {column} {definition}")
+    db.execute(
+        """
+        UPDATE books
+        SET provider = 'open_library'
+        WHERE provider_book_id IS NOT NULL
+          AND provider_book_id != ''
+          AND (provider IS NULL OR provider = '' OR provider = 'manual')
+        """
+    )
+    db.execute("UPDATE books SET provider = 'manual' WHERE provider IS NULL OR provider = ''")
 
     # Frühere Versionen behandelten die App als eine einzige globale Sammlung.
     # Ab jetzt gelten Duplikate pro Benutzer. Noch nicht zugeordnete Altbestände
     # bleiben bis zur Anlage des ersten Kontos erhalten und sind nicht sichtbar.
     db.execute("DROP INDEX IF EXISTS idx_books_isbn")
     db.execute("DROP INDEX IF EXISTS idx_books_provider_book_id")
+    db.execute("DROP INDEX IF EXISTS idx_books_user_provider_book")
     db.execute("DROP INDEX IF EXISTS idx_books_identity_key")
     db.execute(
         """
@@ -207,7 +220,7 @@ def init_db():
     db.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_books_user_provider_book
-        ON books(user_id, provider_book_id)
+        ON books(user_id, provider, provider_book_id)
         WHERE user_id IS NOT NULL AND provider_book_id IS NOT NULL
         """
     )

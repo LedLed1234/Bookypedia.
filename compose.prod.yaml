@@ -6,7 +6,9 @@ services:
     command: gunicorn --bind 0.0.0.0:8000 --workers 1 --threads 4 --error-logfile - run:app
     environment:
       DATABASE_PATH: /data/readmore.db
-      BOOK_PROVIDER: open_library
+      BOOK_PROVIDER: ${BOOK_PROVIDER:-}
+      BOOK_FALLBACK_PROVIDER: ${BOOK_FALLBACK_PROVIDER:-}
+      GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY:-}
       APP_ENV: production
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY muss in der .env-Datei gesetzt sein}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-0}

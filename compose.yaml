@@ -6,7 +6,9 @@ services:
     command: flask --app run.py run --debug --host=0.0.0.0 --port=5000
     environment:
       DATABASE_PATH: /data/readmore.db
-      BOOK_PROVIDER: open_library
+      BOOK_PROVIDER: ${BOOK_PROVIDER:-}
+      BOOK_FALLBACK_PROVIDER: ${BOOK_FALLBACK_PROVIDER:-}
+      GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-json}
     ports:

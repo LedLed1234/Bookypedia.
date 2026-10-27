@@ -77,7 +77,7 @@ def enqueue_existing_books(db, provider=PROVIDER_NAME):
         INSERT OR IGNORE INTO series_lookups (
             provider, provider_book_id, authors, status, next_attempt_at
         )
-        SELECT ?, provider_book_id, authors, 'pending', 0
+        SELECT COALESCE(NULLIF(provider, ''), ?), provider_book_id, authors, 'pending', 0
         FROM books
         WHERE provider_book_id IS NOT NULL AND provider_book_id != ''
         """,
@@ -122,13 +122,13 @@ def get_cached_series(db, provider_book_id, provider=PROVIDER_NAME):
                    sm.page_count,
                    (SELECT MAX(b.page_count)
                     FROM books b
-                    WHERE b.provider_book_id = sm.provider_book_id)
+                    WHERE b.provider = ? AND b.provider_book_id = sm.provider_book_id)
                ) AS resolved_page_count
         FROM series_members sm
         WHERE sm.series_id = ?
         ORDER BY sm.sort_order, sm.provider_book_id
         """,
-        (series["id"],),
+        (provider, series["id"]),
     ).fetchall()
     books = []
     for member in members:
@@ -284,7 +284,8 @@ def persist_series_result(db, provider_book_id, authors, result, provider=PROVID
         SELECT b.id, l.current_position
         FROM books b
         JOIN series_lookups l
-          ON l.provider = ? AND l.provider_book_id = b.provider_book_id
+          ON l.provider = ? AND l.provider = b.provider
+         AND l.provider_book_id = b.provider_book_id
         WHERE l.series_id = ?
         """,
         (provider, series_id),
@@ -374,7 +375,8 @@ def process_next_series_job(database_path, provider, logger=None):
                 },
             )
         try:
-            result = provider.series(
+            selected_provider = provider(job["provider"]) if callable(provider) else provider
+            result = selected_provider.series(
                 job["provider_book_id"],
                 authors=[author.strip() for author in job["authors"].split(",") if author.strip()],
                 limit=24,
@@ -422,6 +424,7 @@ class SeriesWorker:
     def __init__(self, app):
         self.database_path = app.config["DATABASE"]
         self.provider_name = app.config.get("BOOK_PROVIDER", PROVIDER_NAME)
+        self.fallback_provider_name = app.config.get("BOOK_FALLBACK_PROVIDER")
         self.poll_interval = app.config.get("SERIES_WORKER_POLL_INTERVAL", 1.0)
         self.logger = app.logger
         self._wake_event = threading.Event()
@@ -436,7 +439,11 @@ class SeriesWorker:
         self._thread.start()
         self.logger.info(
             "Hintergrund-Worker für Buchreihen gestartet",
-            extra={"event": "series_worker_started", "provider": self.provider_name},
+            extra={
+                "event": "series_worker_started",
+                "provider": self.provider_name,
+                "fallback_provider": self.fallback_provider_name,
+            },
         )
 
     def wake(self):
@@ -447,25 +454,20 @@ class SeriesWorker:
         self._wake_event.set()
 
     def _run(self):
-        try:
-            provider = create_provider(self.provider_name)
-        except Exception as error:
-            self.logger.exception(
-                "Hintergrund-Worker konnte nicht initialisiert werden",
-                extra={
-                    "event": "series_worker_initialization_failed",
-                    "provider": self.provider_name,
-                    "error_type": type(error).__name__,
-                },
-            )
-            return
+        providers = {}
+
+        def provider_for(name):
+            if name not in providers:
+                providers[name] = create_provider(name)
+            return providers[name]
+
         while not self._stop_event.is_set():
             try:
                 processed_metadata = process_next_metadata_job(
-                    self.database_path, provider, logger=self.logger
+                    self.database_path, provider_for, logger=self.logger
                 )
                 processed_series = process_next_series_job(
-                    self.database_path, provider, logger=self.logger
+                    self.database_path, provider_for, logger=self.logger
                 )
                 processed = processed_metadata or processed_series
             except Exception as error:

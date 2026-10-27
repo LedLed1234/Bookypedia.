@@ -47,7 +47,6 @@ if ! "${git_safe[@]}" diff --quiet || ! "${git_safe[@]}" diff --cached --quiet; 
   exit 1
 fi
 
-log "Prüfe origin/${BRANCH} …"
 "${git_safe[@]}" fetch --quiet origin "${BRANCH}"
 remote_commit="$("${git_safe[@]}" rev-parse "origin/${BRANCH}")"
 deployed_commit=""
@@ -56,7 +55,6 @@ if [[ -f "${DEPLOYED_COMMIT_FILE}" ]]; then
 fi
 
 if [[ "${remote_commit}" == "${deployed_commit}" ]]; then
-  log "Keine neue Version."
   exit 0
 fi
 

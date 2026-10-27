@@ -19,6 +19,7 @@ EXTRA_FIELDS = (
     "book_id",
     "user_id",
     "provider",
+    "fallback_provider",
     "provider_book_id",
     "lookup_status",
     "attempt",
@@ -26,7 +27,9 @@ EXTRA_FIELDS = (
     "member_count",
     "changed_fields",
     "queued_books",
+    "queued_metadata",
     "worker_enabled",
+    "app_version",
     "error_type",
     "csrf_rejected",
 )

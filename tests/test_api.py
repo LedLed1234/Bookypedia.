@@ -39,6 +39,30 @@ def test_complete_book_lifecycle(client):
     assert client.get("/api/books").get_json()["books"] == []
 
 
+def test_book_keeps_catalogue_provider_for_later_requests(client):
+    created = client.post(
+        "/api/books",
+        json={
+            **BOOK,
+            "isbn": "9781234567897",
+            "provider": "google_books",
+            "provider_book_id": "google-volume-1",
+            "provider_edition_id": "google-volume-1",
+        },
+    ).get_json()["book"]
+
+    assert created["provider"] == "google_books"
+    with client.application.app_context():
+        db = importlib.import_module("readmore.db").get_db()
+        assert db.execute(
+            "SELECT provider FROM metadata_lookups WHERE book_id = ?", (created["id"],)
+        ).fetchone()["provider"] == "google_books"
+        assert db.execute(
+            "SELECT provider FROM series_lookups WHERE provider_book_id = ?",
+            ("google-volume-1",),
+        ).fetchone()["provider"] == "google_books"
+
+
 def test_wishlist_and_owned_unread_books_are_separate(client):
     wishlist = client.post("/api/books", json=BOOK).get_json()["book"]
     unread = client.post(
@@ -361,6 +385,114 @@ def test_search_uses_normalized_provider_results(client, monkeypatch):
     response = client.get("/api/search?q=Dune")
     assert response.status_code == 200
     assert response.get_json()["results"] == expected
+
+
+def test_primary_provider_uses_fallback_only_without_a_good_result(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers")
+    calls = []
+
+    class FakeProvider:
+        def __init__(self, name, results):
+            self.name = name
+            self.results = results
+
+        def search(self, query, limit):
+            calls.append((self.name, query, limit))
+            return self.results
+
+    providers = {
+        "open_library": FakeProvider("open_library", [{"title": "Etwas völlig anderes"}]),
+        "google_books": FakeProvider("google_books", [{"title": "Legende vom Tränenvogel"}]),
+    }
+    monkeypatch.setattr(provider_module, "create_provider", providers.__getitem__)
+
+    provider = provider_module.PrimaryFallbackProvider("open_library", "google_books")
+    results = provider.search("Legende vom Tränenvogel", limit=4)
+
+    assert results == [{"title": "Legende vom Tränenvogel"}]
+    assert calls == [
+        ("open_library", "Legende vom Tränenvogel", 4),
+        ("google_books", "Legende vom Tränenvogel", 4),
+    ]
+
+
+def test_identical_primary_and_fallback_provider_disable_fallback(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers")
+    creations = []
+
+    class FakeProvider:
+        def search(self, _query, limit):
+            return [{"title": f"Treffer {limit}"}]
+
+    def create(name):
+        creations.append(name)
+        return FakeProvider()
+
+    monkeypatch.setattr(provider_module, "create_provider", create)
+    provider = provider_module.PrimaryFallbackProvider("open_library", "open_library")
+
+    assert provider.search("Unbekannt", limit=4) == [{"title": "Treffer 4"}]
+    assert creations == ["open_library"]
+
+
+def test_google_books_results_are_normalized(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.google_books")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "items": [{
+                    "id": "google-volume-1",
+                    "volumeInfo": {
+                        "title": "Legende vom Tränenvogel",
+                        "authors": ["Kyung-sook Shin"],
+                        "publisher": "HarperCollins",
+                        "publishedDate": "2024-05-01",
+                        "pageCount": 320,
+                        "language": "de",
+                        "industryIdentifiers": [
+                            {"type": "ISBN_13", "identifier": "9781234567897"}
+                        ],
+                        "imageLinks": {"thumbnail": "http://books.google.com/cover.jpg"},
+                    },
+                }]
+            }
+
+    monkeypatch.setattr(provider_module.requests, "get", lambda *args, **kwargs: FakeResponse())
+    result = provider_module.GoogleBooksProvider().search("Legende vom Tränenvogel", 4)[0]
+
+    assert result["provider"] == "google_books"
+    assert result["provider_book_id"] == "google-volume-1"
+    assert result["provider_edition_id"] == "google-volume-1"
+    assert result["isbn"] == "9781234567897"
+    assert result["page_count"] == 320
+    assert result["cover_url"].startswith("https://")
+
+
+def test_catalogue_metadata_uses_provider_from_result(client, monkeypatch):
+    api_module = importlib.import_module("readmore.api")
+    calls = []
+
+    class MetadataProvider:
+        def metadata(self, provider_book_id, provider_edition_id):
+            calls.append((provider_book_id, provider_edition_id))
+            return {"page_count": 321}
+
+    def provider_for(name=None):
+        assert name == "google_books"
+        return MetadataProvider()
+
+    monkeypatch.setattr(api_module, "get_provider", provider_for)
+    response = client.get(
+        "/api/metadata?provider=google_books&provider_book_id=volume-7&provider_edition_id=volume-7"
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["metadata"]["page_count"] == 321
+    assert calls == [("volume-7", "volume-7")]
 
 
 def test_search_result_limit_can_be_configured_per_request(client, monkeypatch):
@@ -1132,6 +1264,8 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="settings-search-limit"' in html
     assert 'id="settings-start-view"' in html
     assert 'id="settings-mobile-text-size"' in html
+    assert 'class="settings-version"' in html
+    assert client.application.config["BUILD_VERSION"] in html
     assert 'data-filter="unread"' in html
     assert '<span>Ungelesen</span>' in html
     assert '<span>Lese ich</span>' in html
@@ -1154,6 +1288,11 @@ def test_frontend_exposes_all_appearance_palettes(client):
         assert f'data-theme-option="{theme}"' in html
 
     config = client.get("/static/config.json").get_json()
+    assert config["catalogue"] == {
+        "mode": "primary_fallback",
+        "primaryProvider": "open_library",
+        "fallbackProvider": "google_books",
+    }
     assert config["defaults"] == {
         "theme": "blue-white",
         "searchResultLimit": 4,

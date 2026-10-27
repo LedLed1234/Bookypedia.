@@ -1,4 +1,9 @@
 {
+  "catalogue": {
+    "mode": "primary_fallback",
+    "primaryProvider": "open_library",
+    "fallbackProvider": "google_books"
+  },
   "defaults": {
     "theme": "blue-white",
     "searchResultLimit": 4,

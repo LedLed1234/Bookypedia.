@@ -11,8 +11,8 @@ from flask import Blueprint, current_app, g, jsonify, request
 
 from .db import get_db
 from .metadata_cache import enqueue_metadata_lookup, metadata_lookup_status
-from .providers import get_provider
-from .providers.open_library import ProviderUnavailable
+from .providers import KNOWN_PROVIDERS, get_provider
+from .providers.base import ProviderUnavailable
 from .series_cache import enqueue_series_lookup, get_cached_series, wake_series_worker
 from .text import identity_key, normalize_text
 
@@ -101,8 +101,7 @@ def _known_metadata(book):
     }
 
 
-def _cached_book_metadata(db, provider_book_id, provider_edition_id=None):
-    provider_name = current_app.config["BOOK_PROVIDER"]
+def _cached_book_metadata(db, provider_name, provider_book_id, provider_edition_id=None):
     edition_id = str(provider_edition_id or "").strip()
     cache_key = f"{provider_name}:{provider_book_id}:{edition_id}"
     row = db.execute(
@@ -115,7 +114,7 @@ def _cached_book_metadata(db, provider_book_id, provider_edition_id=None):
         except (TypeError, ValueError):
             pass
 
-    provider = get_provider()
+    provider = get_provider(provider_name)
     metadata = provider.metadata(provider_book_id, edition_id or None)
     metadata = metadata if isinstance(metadata, dict) else {}
     db.execute(
@@ -168,7 +167,11 @@ def validation_error(message, status=400):
 
 
 def cached_provider_search(provider, query, suggestions=False, limit=SEARCH_RESULT_LIMIT):
-    provider_name = f"{type(provider).__module__}.{type(provider).__qualname__}"
+    provider_name = getattr(
+        provider,
+        "cache_identity",
+        f"{type(provider).__module__}.{type(provider).__qualname__}",
+    )
     normalized_query = unicodedata.normalize("NFKC", query).casefold()
     key = (provider_name, suggestions, limit, normalized_query)
     now = monotonic()
@@ -220,7 +223,7 @@ def prioritize_series_results(query, results, limit):
     if not provider_book_id:
         return results
     db = get_db()
-    provider_name = current_app.config["BOOK_PROVIDER"]
+    provider_name = lead.get("provider") or current_app.config["BOOK_PROVIDER"]
     series, status = get_cached_series(db, provider_book_id, provider=provider_name)
     if status == "missing":
         enqueue_series_lookup(db, provider_book_id, lead.get("authors") or [], provider=provider_name)
@@ -277,6 +280,7 @@ def search_books():
             extra={
                 "event": "book_search_failed",
                 "provider": current_app.config["BOOK_PROVIDER"],
+                "fallback_provider": current_app.config["BOOK_FALLBACK_PROVIDER"],
                 "error_type": type(error).__name__,
             },
         )
@@ -350,7 +354,7 @@ def book_series(book_id):
     book = serialize_book(row)
     if not book.get("provider_book_id"):
         return jsonify(series=None, status="no_series")
-    provider_name = current_app.config["BOOK_PROVIDER"]
+    provider_name = book.get("provider") or current_app.config["BOOK_PROVIDER"]
     result, status = get_cached_series(db, book["provider_book_id"], provider=provider_name)
     if status == "missing":
         enqueue_series_lookup(db, book["provider_book_id"], book["authors"], provider=provider_name)
@@ -374,7 +378,7 @@ def saved_book_metadata(book_id):
         return jsonify(metadata=metadata)
     status = metadata_lookup_status(db, book_id)
     if status == "missing":
-        enqueue_metadata_lookup(db, book_id, provider=current_app.config["BOOK_PROVIDER"])
+        enqueue_metadata_lookup(db, book_id, provider=book.get("provider") or current_app.config["BOOK_PROVIDER"])
         wake_series_worker(current_app._get_current_object())
         status = "pending"
     return jsonify(metadata=metadata, status=status)
@@ -382,6 +386,9 @@ def saved_book_metadata(book_id):
 
 @api.get("/metadata")
 def catalogue_book_metadata():
+    provider_name = request.args.get("provider", current_app.config["BOOK_PROVIDER"]).strip()
+    if provider_name not in KNOWN_PROVIDERS:
+        return validation_error("Ungültiger Buchanbieter.")
     provider_book_id = request.args.get("provider_book_id", "").strip()
     provider_edition_id = request.args.get("provider_edition_id", "").strip() or None
     if not provider_book_id:
@@ -389,6 +396,7 @@ def catalogue_book_metadata():
     try:
         metadata = _cached_book_metadata(
             get_db(),
+            provider_name,
             provider_book_id,
             provider_edition_id,
         )
@@ -397,7 +405,7 @@ def catalogue_book_metadata():
             "Katalogmetadaten beim Anbieter fehlgeschlagen",
             extra={
                 "event": "catalogue_metadata_failed",
-                "provider": current_app.config["BOOK_PROVIDER"],
+                "provider": provider_name,
                 "error_type": type(error).__name__,
             },
         )
@@ -407,12 +415,14 @@ def catalogue_book_metadata():
 
 @api.get("/series")
 def catalogue_series():
+    provider_name = request.args.get("provider", current_app.config["BOOK_PROVIDER"]).strip()
+    if provider_name not in KNOWN_PROVIDERS:
+        return validation_error("Ungültiger Buchanbieter.")
     provider_book_id = request.args.get("provider_book_id", "").strip()
     if not provider_book_id:
         return validation_error("Eine Buch-ID ist erforderlich.")
     authors = [author.strip() for author in request.args.getlist("author") if author.strip()][:6]
     db = get_db()
-    provider_name = current_app.config["BOOK_PROVIDER"]
     result, status = get_cached_series(db, provider_book_id, provider=provider_name)
     if status == "missing":
         enqueue_series_lookup(db, provider_book_id, authors, provider=provider_name)
@@ -444,6 +454,13 @@ def create_book():
     isbn = normalize_isbn(payload.get("isbn"))
     provider_book_id = str(payload.get("provider_book_id") or "").strip() or None
     provider_edition_id = str(payload.get("provider_edition_id") or "").strip() or None
+    provider_name = str(payload.get("provider") or "").strip()
+    if provider_book_id:
+        provider_name = provider_name or current_app.config["BOOK_PROVIDER"]
+        if provider_name not in KNOWN_PROVIDERS:
+            return validation_error("Ungültiger Buchanbieter.")
+    else:
+        provider_name = "manual"
     cover_url = str(payload.get("cover_url") or "").strip() or None
     original_title = str(payload.get("original_title") or "").strip() or None
     original_authors = normalize_authors(payload.get("original_authors"))
@@ -458,7 +475,7 @@ def create_book():
     key = identity_key(title, authors)
     db = get_db()
 
-    duplicate = _find_duplicate(db, g.user["id"], isbn, provider_book_id, key)
+    duplicate = _find_duplicate(db, g.user["id"], isbn, provider_name, provider_book_id, key)
     if duplicate:
         return jsonify(error="Dieses Buch ist bereits in deiner Sammlung.", book=serialize_book(duplicate)), 409
 
@@ -469,19 +486,20 @@ def create_book():
         cursor = db.execute(
             f"""
             INSERT INTO books (
-                user_id, title, authors, isbn, provider_book_id, provider_edition_id,
+                user_id, title, authors, isbn, provider, provider_book_id, provider_edition_id,
                 cover_url, original_title, original_authors, language, page_count,
                 publisher, publish_date, description, physical_format, subtitle,
                 subjects_json, identity_key, status, is_owned, rating, review,
                 {status_timestamp_column}
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
                 g.user["id"],
                 title,
                 authors,
                 isbn,
+                provider_name,
                 provider_book_id,
                 provider_edition_id,
                 cover_url,
@@ -513,13 +531,13 @@ def create_book():
         enqueue_metadata_lookup(
             db,
             row["id"],
-            provider=current_app.config["BOOK_PROVIDER"],
+            provider=provider_name,
         )
         enqueue_series_lookup(
             db,
             provider_book_id,
             authors,
-            provider=current_app.config["BOOK_PROVIDER"],
+            provider=provider_name,
         )
         wake_series_worker(current_app._get_current_object())
     current_app.logger.info(
@@ -528,7 +546,7 @@ def create_book():
             "event": "book_created",
             "book_id": row["id"],
             "user_id": g.user["id"],
-            "provider": current_app.config["BOOK_PROVIDER"] if provider_book_id else "manual",
+            "provider": provider_name,
         },
     )
     return jsonify(book=serialize_book(row)), 201
@@ -641,15 +659,15 @@ def delete_book(book_id):
     return "", 204
 
 
-def _find_duplicate(db, user_id, isbn, provider_book_id, key):
+def _find_duplicate(db, user_id, isbn, provider, provider_book_id, key):
     conditions = ["identity_key = ?"]
     values = [key]
     if isbn:
         conditions.append("isbn = ?")
         values.append(isbn)
     if provider_book_id:
-        conditions.append("provider_book_id = ?")
-        values.append(provider_book_id)
+        conditions.append("(provider = ? AND provider_book_id = ?)")
+        values.extend((provider, provider_book_id))
     return db.execute(
         f"SELECT * FROM books WHERE user_id = ? AND ({' OR '.join(conditions)}) LIMIT 1",
         [user_id, *values],

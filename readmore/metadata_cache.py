@@ -41,7 +41,7 @@ def enqueue_existing_metadata(db, provider="open_library"):
         INSERT OR IGNORE INTO metadata_lookups (
             book_id, provider, status, next_attempt_at
         )
-        SELECT id, ?, 'pending', 0
+        SELECT id, COALESCE(NULLIF(provider, ''), ?), 'pending', 0
         FROM books
         WHERE provider_book_id IS NOT NULL AND provider_book_id != ''
         """,
@@ -226,7 +226,8 @@ def process_next_metadata_job(database_path, provider, logger=None):
             except (TypeError, ValueError):
                 metadata = None
             if not metadata:
-                metadata = provider.metadata(
+                selected_provider = provider(job["provider"]) if callable(provider) else provider
+                metadata = selected_provider.metadata(
                     job["provider_book_id"],
                     job.get("provider_edition_id"),
                 )

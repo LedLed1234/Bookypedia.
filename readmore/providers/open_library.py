@@ -3,11 +3,7 @@ from difflib import SequenceMatcher
 
 import requests
 
-from .base import BookProvider
-
-
-class ProviderUnavailable(RuntimeError):
-    pass
+from .base import BookProvider, ProviderUnavailable
 
 
 class OpenLibraryProvider(BookProvider):

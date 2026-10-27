@@ -10,7 +10,13 @@ COPY requirements.txt requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-RUN mkdir -p /data && chown -R 1000:1000 /app /data
+RUN find /app -type f ! -name '.build-version' -print0 \
+      | sort -z \
+      | xargs -0 sha256sum \
+      | sha256sum \
+      | cut -c1-12 > /app/.build-version \
+    && mkdir -p /data \
+    && chown -R 1000:1000 /app /data
 
 FROM base AS development
 RUN pip install --no-cache-dir pytest==8.4.2
