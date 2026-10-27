@@ -83,6 +83,7 @@ def normalize_subjects(value):
 
 def _known_metadata(book):
     fields = (
+        "provider_edition_id",
         "isbn",
         "publisher",
         "publish_date",

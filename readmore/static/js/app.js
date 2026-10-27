@@ -409,6 +409,14 @@ function pageCountText(book, fallback = "") {
   return Number.isInteger(pages) && pages > 0 ? `${pages.toLocaleString("de-DE")} Seiten` : fallback;
 }
 
+function publicationDateText(book, withLabel = false) {
+  const editionDate = String(book?.publish_date || "").trim();
+  if (editionDate) return withLabel ? `Erschienen ${editionDate}` : editionDate;
+  const firstYear = book?.first_publish_year;
+  if (!firstYear) return "";
+  return withLabel ? `Erstmals erschienen ${firstYear}` : String(firstYear);
+}
+
 function createBookInfoButton(book, insideBookDialog = false) {
   const button = document.createElement("button");
   button.className = insideBookDialog
@@ -538,6 +546,33 @@ function mergeKnownBookMetadata(book, knownBook) {
   return merged;
 }
 
+function mergeLoadedBookMetadata(book, metadata) {
+  const loaded = metadata && typeof metadata === "object" ? { ...metadata } : {};
+  const currentEdition = book?.provider_edition_id || "";
+  const loadedEdition = loaded.provider_edition_id || "";
+  if (currentEdition && loadedEdition && currentEdition !== loadedEdition) {
+    [
+      "provider_edition_id", "isbn", "cover_url", "language", "page_count", "publisher",
+      "publish_date", "physical_format", "subtitle",
+    ].forEach((field) => delete loaded[field]);
+  }
+
+  Object.assign(book, loaded);
+  const resolvedEdition = book?.provider_edition_id || loadedEdition;
+  let searchResultChanged = false;
+  [...state.books, ...state.searchResults, ...state.suggestions, ...state.remoteSuggestions]
+    .forEach((candidate) => {
+      if (!candidate || candidate === book) return;
+      if (!book?.provider_book_id || candidate.provider_book_id !== book.provider_book_id) return;
+      const candidateEdition = candidate.provider_edition_id || "";
+      if (candidateEdition && resolvedEdition && candidateEdition !== resolvedEdition) return;
+      Object.assign(candidate, loaded);
+      if (state.searchResults.includes(candidate)) searchResultChanged = true;
+    });
+  if (searchResultChanged && !searchPanel.hidden) renderSearchResults();
+  return { ...book };
+}
+
 function enrichKnownBookMetadata(book) {
   const candidates = [
     ...state.books,
@@ -637,7 +672,7 @@ function renderSuggestions(query, { loading = false, failed = false } = {}) {
     title.textContent = book.title;
     const meta = document.createElement("span");
     meta.className = "suggestion-meta";
-    const details = [authorText(book), book.first_publish_year, pageCountText(book, "Seitenzahl unbekannt")]
+    const details = [authorText(book), publicationDateText(book), pageCountText(book, "Seitenzahl unbekannt")]
       .filter(Boolean)
       .join(" · ");
     meta.textContent = details;
@@ -1261,12 +1296,13 @@ async function loadBookMetadata(book, metadataIdentity) {
   try {
     const payload = await api(url);
     if (metadataIdentityForBook(state.infoBook) !== metadataIdentity) return;
-    state.detailMetadata = { ...book, ...(payload.metadata || {}) };
+    state.detailMetadata = mergeLoadedBookMetadata(book, payload.metadata || {});
+    state.detailMetadataIdentity = metadataIdentityForBook(book);
     if (["pending", "running", "retry"].includes(payload.status)) {
       state.detailMetadataLoaded = false;
       state.detailMetadataUnavailable = false;
       renderBookInfo();
-      scheduleMetadataPoll(url, book, metadataIdentity, 1);
+      scheduleMetadataPoll(url, book, state.detailMetadataIdentity, 1);
       return;
     }
     state.detailMetadataLoaded = true;
@@ -1288,10 +1324,11 @@ function scheduleMetadataPoll(url, book, metadataIdentity, attempt) {
     try {
       const payload = await api(url);
       if (!bookDialog.open || metadataIdentityForBook(state.infoBook) !== metadataIdentity) return;
-      state.detailMetadata = { ...book, ...(payload.metadata || {}) };
+      state.detailMetadata = mergeLoadedBookMetadata(book, payload.metadata || {});
+      state.detailMetadataIdentity = metadataIdentityForBook(book);
       if (["pending", "running", "retry"].includes(payload.status)) {
         renderBookInfo();
-        scheduleMetadataPoll(url, book, metadataIdentity, attempt + 1);
+        scheduleMetadataPoll(url, book, state.detailMetadataIdentity, attempt + 1);
         return;
       }
       state.detailMetadataLoaded = true;
@@ -1545,7 +1582,7 @@ function seriesBookRow(book) {
   const meta = document.createElement("span");
   meta.textContent = [
     authorText(displayBook),
-    displayBook.first_publish_year,
+    publicationDateText(displayBook),
     pageCountText(displayBook, "Seitenzahl unbekannt"),
   ].filter(Boolean).join(" · ");
   copy.append(position, title, meta);
@@ -1696,7 +1733,7 @@ function searchCard(book) {
   author.textContent = authorText(book);
   meta.append(title, author);
   const publicationDetails = [
-    book.first_publish_year ? `Erstmals erschienen ${book.first_publish_year}` : "",
+    publicationDateText(book, true),
     pageCountText(book, "Seitenzahl unbekannt"),
   ].filter(Boolean);
   if (publicationDetails.length) {

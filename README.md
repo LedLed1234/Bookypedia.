@@ -338,6 +338,43 @@ docker compose -f compose.prod.yaml -f compose.public.yaml logs --tail=100 app c
 
 `git pull` aktualisiert nur den Anwendungscode. Die SQLite-Datenbank liegt dauerhaft im benannten Docker-Volume `readmore_prod_data` und bleibt bei Neubauten und Container-Neustarts erhalten. Weder `docker compose down -v` noch `docker volume rm` verwenden, wenn die gespeicherte Sammlung erhalten bleiben soll.
 
+### Automatisch nach einem Push deployen
+
+Der VPS kann `origin/main` regelmäßig prüfen und nur bei einem neuen Commit
+deployen. Die mitgelieferte Variante prüft alle zwei Minuten. Ohne Änderung
+werden weder Docker-Images gebaut noch Container neu gestartet.
+
+Einmalig auf dem VPS unter `/opt/bookypedia` installieren:
+
+```bash
+sudo install -m 0755 deploy/epiloguehouse-auto-deploy \
+  /usr/local/sbin/epiloguehouse-auto-deploy
+sudo install -m 0644 deploy/epiloguehouse-deploy.service \
+  /etc/systemd/system/epiloguehouse-deploy.service
+sudo install -m 0644 deploy/epiloguehouse-deploy.timer \
+  /etc/systemd/system/epiloguehouse-deploy.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now epiloguehouse-deploy.timer
+```
+
+Timer und letzte Deployment-Logs kontrollieren:
+
+```bash
+systemctl list-timers epiloguehouse-deploy.timer
+sudo journalctl -u epiloguehouse-deploy.service -n 100 --no-pager
+```
+
+Ein Deployment sofort manuell anstoßen:
+
+```bash
+sudo systemctl start epiloguehouse-deploy.service
+```
+
+Das Skript bricht bei lokalen Änderungen oder einem abweichenden Git-Verlauf
+ab, verhindert parallele Deployments und markiert eine Version erst nach einem
+erfolgreichen Healthcheck als ausgerollt. Ein fehlgeschlagener Build wird beim
+nächsten Timer-Lauf erneut versucht.
+
 ## Optionaler Desktop-Starter über SSH
 
 Solange noch keine öffentliche HTTPS-Domain eingerichtet ist, kann Bookypedia

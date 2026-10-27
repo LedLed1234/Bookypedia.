@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS series (
     name TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT 'unknown',
     incomplete INTEGER NOT NULL DEFAULT 0,
-    metadata_version INTEGER NOT NULL DEFAULT 2,
+    metadata_version INTEGER NOT NULL DEFAULT 3,
     fetched_at INTEGER NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(provider, identity_key)
@@ -69,11 +69,13 @@ CREATE TABLE IF NOT EXISTS series (
 CREATE TABLE IF NOT EXISTS series_members (
     series_id INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
     provider_book_id TEXT NOT NULL,
+    provider_edition_id TEXT,
     title TEXT NOT NULL,
     authors TEXT NOT NULL DEFAULT '',
     isbn TEXT,
     cover_url TEXT,
     first_publish_year INTEGER,
+    publish_date TEXT,
     page_count INTEGER,
     position TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
@@ -225,6 +227,10 @@ def init_db():
     }
     if "page_count" not in series_member_columns:
         db.execute("ALTER TABLE series_members ADD COLUMN page_count INTEGER")
+    if "provider_edition_id" not in series_member_columns:
+        db.execute("ALTER TABLE series_members ADD COLUMN provider_edition_id TEXT")
+    if "publish_date" not in series_member_columns:
+        db.execute("ALTER TABLE series_members ADD COLUMN publish_date TEXT")
 
     # Ältere Versionen konnten Cover noch mit einer unverschlüsselten Open-
     # Library-Adresse speichern. Unter HTTPS blockiert der Browser diese Bilder.
@@ -248,14 +254,16 @@ def init_db():
     if "metadata_version" not in series_columns:
         db.execute("ALTER TABLE series ADD COLUMN metadata_version INTEGER NOT NULL DEFAULT 1")
     # Vorhandene Reihen bleiben über series_id lesbar, werden aber im Hintergrund
-    # neu geladen, damit die neue Seitenzahl-Metadatenstufe ergänzt wird.
+    # neu geladen. Version 3 hält Seitenzahl und Erscheinungsdatum gemeinsam mit
+    # der konkreten Ausgabe-ID fest, damit die Karten und Buchinfos dieselbe
+    # Open-Library-Ausgabe beschreiben.
     db.execute(
         """
         UPDATE series_lookups
         SET status = 'pending', next_attempt_at = 0, locked_at = NULL,
             updated_at = CURRENT_TIMESTAMP
         WHERE status = 'ready'
-          AND series_id IN (SELECT id FROM series WHERE metadata_version < 2)
+          AND series_id IN (SELECT id FROM series WHERE metadata_version < 3)
         """
     )
 

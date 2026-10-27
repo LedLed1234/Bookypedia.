@@ -136,6 +136,7 @@ def get_cached_series(db, provider_book_id, provider=PROVIDER_NAME):
             {
                 "provider": provider,
                 "provider_book_id": member["provider_book_id"],
+                "provider_edition_id": member["provider_edition_id"],
                 "title": member["title"],
                 "authors": [
                     author.strip() for author in member["authors"].split(",") if author.strip()
@@ -143,6 +144,7 @@ def get_cached_series(db, provider_book_id, provider=PROVIDER_NAME):
                 "isbn": member["isbn"],
                 "cover_url": member["cover_url"],
                 "first_publish_year": member["first_publish_year"],
+                "publish_date": member["publish_date"],
                 "page_count": member["resolved_page_count"],
                 "series_position": member["position"],
             }
@@ -182,7 +184,7 @@ def persist_series_result(db, provider_book_id, authors, result, provider=PROVID
         INSERT INTO series (
             provider, identity_key, provider_series_id, name, source,
             incomplete, metadata_version, fetched_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 2, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, 3, ?)
         ON CONFLICT(provider, identity_key) DO UPDATE SET
             provider_series_id = excluded.provider_series_id,
             name = excluded.name,
@@ -222,8 +224,10 @@ def persist_series_result(db, provider_book_id, authors, result, provider=PROVID
             title,
             _authors_text(book.get("authors") or authors),
             book.get("isbn"),
+            book.get("provider_edition_id"),
             book.get("cover_url"),
             book.get("first_publish_year"),
+            book.get("publish_date"),
             book.get("page_count"),
             str(book.get("series_position")) if book.get("series_position") is not None else None,
             sort_order,
@@ -232,9 +236,9 @@ def persist_series_result(db, provider_book_id, authors, result, provider=PROVID
     db.executemany(
         """
         INSERT INTO series_members (
-            series_id, provider_book_id, title, authors, isbn, cover_url,
-            first_publish_year, page_count, position, sort_order
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            series_id, provider_book_id, title, authors, isbn, provider_edition_id,
+            cover_url, first_publish_year, publish_date, page_count, position, sort_order
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         members,
     )
@@ -254,7 +258,7 @@ def persist_series_result(db, provider_book_id, authors, result, provider=PROVID
     for member in members:
         member_id = member[1]
         member_authors = member[3]
-        member_position = member[8]
+        member_position = member[10]
         db.execute(
             """
             INSERT INTO series_lookups (

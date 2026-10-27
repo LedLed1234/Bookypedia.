@@ -854,6 +854,7 @@ def test_book_metadata_is_loaded_in_background_and_stored_on_book(client):
 
     pending = client.get(f"/api/books/{created['id']}/metadata").get_json()
     assert pending["status"] == "pending"
+    assert pending["metadata"]["provider_edition_id"] == "/books/OL2M"
     assert pending["metadata"]["page_count"] == 304
 
     metadata_module = importlib.import_module("readmore.metadata_cache")
@@ -1010,6 +1011,9 @@ def test_series_cache_survives_app_restart(tmp_path):
                         "title": BOOK["title"],
                         "authors": BOOK["authors"],
                         "provider_book_id": BOOK["provider_book_id"],
+                        "provider_edition_id": "/books/OL42M",
+                        "publish_date": "1 June 1974",
+                        "page_count": 387,
                         "series_position": "4",
                     }
                 ],
@@ -1022,7 +1026,9 @@ def test_series_cache_survives_app_restart(tmp_path):
     response = restarted_app.test_client().get(f"/api/books/{created['id']}/series").get_json()
     assert response["status"] == "ready"
     assert response["series"]["name"] == "Hainish Cycle"
-    assert response["series"]["books"][0]["page_count"] == 304
+    assert response["series"]["books"][0]["provider_edition_id"] == "/books/OL42M"
+    assert response["series"]["books"][0]["publish_date"] == "1 June 1974"
+    assert response["series"]["books"][0]["page_count"] == 387
 
 
 def test_failed_series_fetch_is_persisted_for_retry(client):

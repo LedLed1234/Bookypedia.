@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+readonly APP_DIR="${EPILOGUEHOUSE_APP_DIR:-/opt/bookypedia}"
+readonly BRANCH="${EPILOGUEHOUSE_BRANCH:-main}"
+readonly STATE_DIR="/var/lib/epiloguehouse-deploy"
+readonly DEPLOYED_COMMIT_FILE="${STATE_DIR}/deployed-commit"
+readonly LOCK_FILE="/run/lock/epiloguehouse-deploy.lock"
+
+log() {
+  printf '[epiloguehouse-deploy] %s\n' "$*"
+}
+
+if [[ ${EUID} -ne 0 ]]; then
+  log "Dieses Skript muss als root ausgeführt werden."
+  exit 1
+fi
+
+if [[ ! -d "${APP_DIR}/.git" ]]; then
+  log "Kein Git-Repository unter ${APP_DIR} gefunden."
+  exit 1
+fi
+
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+  log "Ein Deployment läuft bereits; dieser Durchlauf wird übersprungen."
+  exit 0
+fi
+
+cd "${APP_DIR}"
+git_safe=(git -c "safe.directory=${APP_DIR}")
+compose=(
+  docker compose
+  -f "${APP_DIR}/compose.prod.yaml"
+  -f "${APP_DIR}/compose.public.yaml"
+)
+
+current_branch="$("${git_safe[@]}" symbolic-ref --quiet --short HEAD || true)"
+if [[ "${current_branch}" != "${BRANCH}" ]]; then
+  log "Abbruch: ${APP_DIR} befindet sich auf '${current_branch:-detached}', erwartet wird '${BRANCH}'."
+  exit 1
+fi
+
+if ! "${git_safe[@]}" diff --quiet || ! "${git_safe[@]}" diff --cached --quiet; then
+  log "Abbruch: Im Produktions-Repository liegen lokale Änderungen."
+  exit 1
+fi
+
+log "Prüfe origin/${BRANCH} …"
+"${git_safe[@]}" fetch --quiet origin "${BRANCH}"
+remote_commit="$("${git_safe[@]}" rev-parse "origin/${BRANCH}")"
+deployed_commit=""
+if [[ -f "${DEPLOYED_COMMIT_FILE}" ]]; then
+  deployed_commit="$(<"${DEPLOYED_COMMIT_FILE}")"
+fi
+
+if [[ "${remote_commit}" == "${deployed_commit}" ]]; then
+  log "Keine neue Version."
+  exit 0
+fi
+
+current_commit="$("${git_safe[@]}" rev-parse HEAD)"
+if ! "${git_safe[@]}" merge-base --is-ancestor "${current_commit}" "${remote_commit}"; then
+  log "Abbruch: main wurde verändert oder das Produktions-Repository ist abgewichen."
+  exit 1
+fi
+
+log "Aktualisiere ${current_commit:0:12} auf ${remote_commit:0:12} …"
+"${git_safe[@]}" pull --ff-only origin "${BRANCH}"
+
+log "Baue und starte die Container …"
+"${compose[@]}" up --build -d --remove-orphans
+
+log "Prüfe den Healthcheck …"
+healthy=0
+for _attempt in {1..30}; do
+  if curl --fail --silent http://127.0.0.1:8000/health >/dev/null; then
+    healthy=1
+    break
+  fi
+  sleep 2
+done
+
+if [[ ${healthy} -ne 1 ]]; then
+  log "Deployment fehlgeschlagen: Der Healthcheck war nach 60 Sekunden nicht erfolgreich."
+  "${compose[@]}" ps
+  exit 1
+fi
+
+install -d -m 0755 "${STATE_DIR}"
+printf '%s\n' "${remote_commit}" >"${DEPLOYED_COMMIT_FILE}"
+log "Deployment von ${remote_commit:0:12} erfolgreich."
