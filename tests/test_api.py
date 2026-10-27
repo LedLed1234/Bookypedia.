@@ -267,11 +267,36 @@ def test_non_latin_titles_have_distinct_unicode_identities(client):
 
 def test_manual_book_and_validation(client):
     response = client.post(
-        "/api/books", json={"title": "Eigenes Buch", "authors": "Eine Person", "status": "reading"}
+        "/api/books",
+        json={
+            "title": "Eigenes Buch",
+            "authors": "Eine Person",
+            "status": "reading",
+            "isbn": "978-3-16-148410-0",
+            "publisher": "Eigenverlag",
+            "publish_date": "15. Oktober 2024",
+            "page_count": 321,
+            "language": "Deutsch",
+            "physical_format": "Hardcover",
+            "subtitle": "Eine Geschichte",
+            "original_title": "An Original Story",
+            "description": "Eine manuell erfasste Beschreibung.",
+            "subjects": ["Fantasy", "Abenteuer"],
+        },
     )
     assert response.status_code == 201
-    assert response.get_json()["book"]["cover_url"] is None
-    assert response.get_json()["book"]["page_count"] is None
+    book = response.get_json()["book"]
+    assert book["cover_url"] is None
+    assert book["isbn"] == "9783161484100"
+    assert book["publisher"] == "Eigenverlag"
+    assert book["publish_date"] == "15. Oktober 2024"
+    assert book["page_count"] == 321
+    assert book["language"] == "Deutsch"
+    assert book["physical_format"] == "Hardcover"
+    assert book["subtitle"] == "Eine Geschichte"
+    assert book["original_title"] == "An Original Story"
+    assert book["description"] == "Eine manuell erfasste Beschreibung."
+    assert book["subjects"] == ["Fantasy", "Abenteuer"]
     assert client.post("/api/books", json={"title": ""}).status_code == 400
     assert client.patch("/api/books/1", json={"rating": 6}).status_code == 400
 
@@ -375,40 +400,61 @@ def test_suggestions_use_provider_prefix_search(client, monkeypatch):
     assert response.get_json()["results"] == expected
 
 
-def test_open_library_suggestions_retry_plain_query_when_prefix_is_empty(monkeypatch):
+def test_open_library_suggestions_fall_back_to_prefix_when_direct_search_is_empty(monkeypatch):
     provider_module = importlib.import_module("readmore.providers.open_library")
     provider = provider_module.OpenLibraryProvider()
     calls = []
 
-    def fake_request(query, limit):
+    def fake_request(query, limit, **_kwargs):
         calls.append((query, limit))
-        if query == "Elantris":
+        if query != "Elant":
             return [{"title": "Elantris", "authors": ["Brandon Sanderson"]}]
         return []
 
     monkeypatch.setattr(provider, "_request", fake_request)
 
-    results = provider.suggest("Elantris", limit=6)
+    results = provider.suggest("Elant", limit=6)
 
     assert results[0]["title"] == "Elantris"
-    assert calls[-1] == ("Elantris", 6)
+    assert calls == [
+        ("Elant", 12),
+        ("title:(Elan*) OR author:(Elan*) OR isbn:(Elan*)", 12),
+    ]
 
 
-def test_open_library_multiword_suggestions_use_relevance_search(monkeypatch):
+def test_open_library_multiword_suggestions_prefer_direct_relevance_search(monkeypatch):
     provider_module = importlib.import_module("readmore.providers.open_library")
     provider = provider_module.OpenLibraryProvider()
     calls = []
     monkeypatch.setattr(
         provider,
         "_request",
-        lambda query, limit: calls.append((query, limit)) or [{"title": "Red Rising"}],
+        lambda query, limit, **_kwargs: calls.append((query, limit)) or [{"title": "Red Rising"}],
     )
 
     provider.suggest("Red Rising", limit=6)
 
-    assert calls == [
-        ("title:(Red AND Ris*) OR author:(Red AND Ris*) OR isbn:(Red AND Ris*)", 12)
-    ]
+    assert calls == [("Red Rising", 12)]
+
+
+def test_open_library_complete_title_suggestion_is_not_broadened_to_bab(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.open_library")
+    provider = provider_module.OpenLibraryProvider()
+    calls = []
+
+    def fake_request(query, limit, **_kwargs):
+        calls.append((query, limit))
+        return [
+            {"title": "Babel", "authors": ["R. F. Kuang"]},
+            {"title": "Babel 17", "authors": ["Samuel R. Delany"]},
+        ]
+
+    monkeypatch.setattr(provider, "_request", fake_request)
+
+    results = provider.suggest("babel", limit=6)
+
+    assert results[0]["title"] == "Babel"
+    assert calls == [("babel", 12)]
 
 
 def test_open_library_typo_search_uses_tolerant_prefix_fallback(monkeypatch):
@@ -432,7 +478,7 @@ def test_open_library_typo_search_uses_tolerant_prefix_fallback(monkeypatch):
     assert [book["title"] for book in results] == ["Red Rising", "Golden Son"]
     assert calls == [
         ("red risin", 4),
-        ("title:(red AND ris*) OR author:(red AND ris*) OR isbn:(red AND ris*)", 12),
+        ("title:(red AND risi*) OR author:(red AND risi*) OR isbn:(red AND risi*)", 12),
     ]
 
 
@@ -580,6 +626,63 @@ def test_repeated_search_uses_short_backend_cache(client, monkeypatch):
     assert client.get("/api/search?q=Dune").status_code == 200
     assert client.get("/api/search?q=dune").status_code == 200
     assert calls == [("Dune", api_module.SEARCH_RESULT_LIMIT)]
+
+
+def test_empty_search_result_is_not_cached(client, monkeypatch):
+    api_module = importlib.import_module("readmore.api")
+    api_module._SEARCH_CACHE.clear()
+    calls = []
+
+    class TemporarilyEmptyProvider:
+        def search(self, query, limit):
+            calls.append((query, limit))
+            if len(calls) == 1:
+                return []
+            return [{"title": "Dune", "authors": ["Frank Herbert"]}]
+
+    provider = TemporarilyEmptyProvider()
+    monkeypatch.setattr(api_module, "get_provider", lambda: provider)
+
+    first = client.get("/api/search?q=Dune")
+    second = client.get("/api/search?q=Dune")
+
+    assert first.get_json()["results"] == []
+    assert second.get_json()["results"][0]["title"] == "Dune"
+    assert len(calls) == 2
+
+
+def test_open_library_search_retries_transient_timeout(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.open_library")
+    provider = provider_module.OpenLibraryProvider()
+    calls = []
+
+    class SuccessfulResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "docs": [
+                    {
+                        "key": "/works/OL1W",
+                        "title": "Dune",
+                        "author_name": ["Frank Herbert"],
+                    }
+                ]
+            }
+
+    def flaky_get(*args, **kwargs):
+        calls.append(kwargs["timeout"])
+        if len(calls) == 1:
+            raise provider_module.requests.Timeout("temporary timeout")
+        return SuccessfulResponse()
+
+    monkeypatch.setattr(provider_module.requests, "get", flaky_get)
+
+    results = provider._request("Dune", 4)
+
+    assert results[0]["title"] == "Dune"
+    assert calls == [(3.05, 8), (2, 4)]
 
 
 def test_open_library_results_with_covers_rank_before_missing_covers():
@@ -994,6 +1097,10 @@ def test_existing_books_are_queued_when_app_starts(tmp_path):
 
 def test_frontend_exposes_all_appearance_palettes(client):
     html = client.get("/").get_data(as_text=True)
+    assert 'aria-label="Epiloguehouse Startseite"' in html
+    assert "Hello, Test User" in html
+    assert 'data-book-info-symbol="!"' in html
+    assert 'classList.add("platform-mobile")' in html
     assert 'id="appearance-button"' in html
     assert 'id="search-suggestions"' in html
     assert 'aria-controls="search-suggestions"' in html

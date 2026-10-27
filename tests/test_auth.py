@@ -38,6 +38,43 @@ def login(client, username, password=PASSWORD):
     )
 
 
+def test_carli_uses_bear_info_symbol_case_insensitively(tmp_path):
+    app = make_app(tmp_path)
+    add_user(app, "cArLi")
+    client = app.test_client()
+
+    assert login(client, "CARLI").status_code == 302
+    html = client.get("/").get_data(as_text=True)
+
+    symbol_match = re.search(r'data-book-info-symbol="([^"]+)"', html)
+    assert symbol_match
+    assert symbol_match.group(1) != "!"
+    assert 'id="book-dialog-info"' in html
+    assert f">{symbol_match.group(1)}</button>" in html
+
+
+def test_manual_book_form_offers_all_visible_metadata_fields(tmp_path):
+    app = make_app(tmp_path)
+    add_user(app, "reader")
+    client = app.test_client()
+    assert login(client, "reader").status_code == 302
+
+    html = client.get("/").get_data(as_text=True)
+    for field in (
+        "isbn",
+        "publisher",
+        "publish_date",
+        "page_count",
+        "language",
+        "physical_format",
+        "subtitle",
+        "original_title",
+        "description",
+        "subjects",
+    ):
+        assert f'name="{field}"' in html
+
+
 def test_five_character_password_is_allowed(tmp_path):
     app = make_app(tmp_path)
     with app.app_context():

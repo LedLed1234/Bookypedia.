@@ -106,7 +106,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   margin: 0 auto;
   padding: 0 24px;
 }
-.brand { color: var(--text); text-decoration: none; font-size: 1.12rem; font-weight: 800; letter-spacing: -.025em; }
+.header-identity { min-width: 0; display: grid; gap: 1px; }
+.brand { overflow: hidden; color: var(--text); text-decoration: none; font-size: 1.12rem; font-weight: 800; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
+.header-greeting { overflow: hidden; color: var(--muted); font-size: .7rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .appearance-picker { position: relative; }
 .appearance-menu {
@@ -261,6 +263,16 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .book-detail-trigger:hover { background: color-mix(in srgb, var(--soft-tint) 82%, var(--accent)); }
 .book-detail-trigger:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 .book-cover { width: 100%; height: 100%; padding: 14px; object-fit: contain; filter: drop-shadow(0 7px 11px rgba(0,0,0,.4)); }
+#book-grid > .book-card:not(.series-collection-card) .book-cover-wrap { position: relative; }
+#book-grid > .book-card:not(.series-collection-card) .book-cover {
+  position: absolute;
+  top: 22px;
+  left: 34px;
+  width: calc(100% - 68px);
+  height: calc(100% - 44px);
+  padding: 0;
+  object-fit: contain;
+}
 .book-placeholder { position: relative; width: min(40%, 110px); aspect-ratio: 2 / 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 12px; color: var(--accent-ink); background: linear-gradient(145deg, var(--accent-hover), var(--accent)); border: 1px solid rgba(255,255,255,.12); border-radius: 3px 8px 8px 3px; box-shadow: 5px 6px 15px rgba(0,0,0,.24), inset 5px 0 rgba(0,0,0,.12); line-height: 1.1; text-align: center; }
 .book-placeholder-mark { font-size: 1.45rem; letter-spacing: .08em; }
 .book-placeholder-label { font-size: .58rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .76; }
@@ -308,6 +320,7 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .empty-state, .loading-state { padding: 64px 20px; color: var(--muted); text-align: center; background: var(--surface-tint); border: 1px dashed var(--theme-border); border-radius: var(--radius); }
 .empty-state h3 { margin: 0 0 7px; color: var(--text); font-size: 1.05rem; }
 .empty-state p { max-width: 440px; margin: 0 auto 20px; font-size: .88rem; }
+.empty-state-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
 
 .dialog { width: min(560px, calc(100% - 28px)); max-height: calc(100vh - 28px); padding: 0; color: var(--text); background: var(--surface-tint); border: 0; border-radius: 16px; box-shadow: 0 28px 100px rgba(0,0,0,.4); }
 .dialog::backdrop { background: rgba(22, 27, 24, .55); backdrop-filter: blur(2px); }
@@ -317,6 +330,14 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .dialog label, .rating-field legend { display: grid; gap: 7px; color: var(--muted); font-size: .8rem; font-weight: 700; }
 .dialog textarea { resize: vertical; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 3px; }
+.manual-dialog { width: min(700px, calc(100% - 28px)); overflow-y: auto; border: 1px solid var(--theme-border); }
+.manual-dialog-shell { gap: 20px; }
+.manual-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.manual-field-wide { grid-column: 1 / -1; }
+.manual-metadata { display: grid; gap: 14px; padding-top: 18px; border-top: 1px solid var(--theme-border); }
+.manual-section-heading { display: grid; gap: 3px; }
+.manual-section-heading h3 { margin: 0; color: var(--text); font-size: .95rem; }
+.manual-section-heading p { margin: 0; color: var(--muted); font-size: .72rem; }
 .settings-dialog { width: min(590px, calc(100% - 28px)); border: 1px solid var(--theme-border); }
 .settings-dialog-shell { gap: 20px; }
 .settings-list { display: grid; gap: 9px; }
@@ -389,14 +410,26 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .reading-milestone-header span { overflow: hidden; color: var(--muted); font-size: .67rem; font-weight: 750; line-height: 1.2; text-overflow: ellipsis; }
 .reading-milestone-header small { flex: 0 0 auto; padding: 2px 5px; color: var(--accent); background: var(--surface-tint); border-radius: 99px; font-size: .58rem; font-weight: 850; text-transform: uppercase; }
 .reading-milestone strong { font-size: .76rem; font-weight: 750; line-height: 1.3; }
-.collection-dialog { width: min(760px, calc(100% - 28px)); border: 1px solid var(--theme-border); }
+.collection-dialog { width: min(760px, calc(100% - 28px)); overflow-y: auto; border: 1px solid var(--theme-border); }
 .collection-dialog-shell { gap: 20px; }
 .collection-book-list { max-height: min(480px, 58vh); overflow-y: auto; display: grid; gap: 8px; padding-right: 3px; }
-.collection-book-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) minmax(140px, 180px) auto; align-items: center; gap: 11px; padding: 10px; background: var(--soft-tint); border: 1px solid var(--theme-border); border-radius: 11px; }
+.collection-book-row { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 10px; background: var(--soft-tint); border: 1px solid var(--theme-border); border-radius: 11px; }
 .collection-book-copy { min-width: 0; display: grid; }
 .collection-book-copy strong, .collection-book-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .collection-book-copy strong { font-size: .88rem; }
 .collection-book-copy span { margin-top: 3px; color: var(--muted); font-size: .73rem; }
+.collection-book-actions { display: flex; align-items: center; gap: 7px; }
+.collection-book-actions .status-select { width: 150px; }
+.collection-book-add { min-height: 36px; padding: 7px 10px; font-size: .72rem; white-space: nowrap; }
+.collection-other-series, .series-other-books { display: grid; gap: 10px; padding-top: 2px; border-top: 1px solid var(--theme-border); }
+.collection-other-series[hidden] { display: none; }
+.collection-other-toggle, .series-other-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; color: var(--text); background: transparent; border: 0; border-radius: 9px; font-size: .8rem; font-weight: 800; text-align: left; }
+.collection-other-toggle:hover, .collection-other-toggle:focus-visible,
+.series-other-toggle:hover, .series-other-toggle:focus-visible { color: var(--accent); background: var(--soft-tint); }
+.collection-other-chevron, .series-other-toggle > span:last-child { flex: 0 0 auto; color: var(--muted); font-size: 1rem; }
+.collection-other-list { max-height: min(340px, 42vh); }
+.collection-other-list[hidden], .series-other-list[hidden] { display: none; }
+.collection-other-book-row { border-style: dashed; }
 .collection-review-button { min-width: 44px; height: 42px; padding: 0 10px; color: var(--muted); background: var(--surface-tint); border: 1px solid var(--theme-border); border-radius: 9px; font-weight: 900; }
 .collection-review-button:hover, .collection-review-button:focus-visible, .collection-review-button.rated { color: var(--gold); border-color: var(--gold); }
 .series-section { display: grid; gap: 13px; }
@@ -417,8 +450,8 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .series-status-select { width: 142px; min-height: 36px; padding-block: 7px; }
 .series-book-action { min-height: 36px; padding: 7px 10px; font-size: .72rem; white-space: nowrap; }
 .series-review-button { height: 36px; min-width: 38px; padding-inline: 8px; }
-.series-info-button { width: 38px; height: 36px; font-size: .9rem; }
-.series-book-delete { width: 38px; height: 36px; font-size: 1rem; }
+.series-info-button { flex: 0 0 38px; width: 38px; height: 36px; font-size: .9rem; font-weight: 900; }
+.series-book-delete { flex: 0 0 38px; width: 38px; height: 36px; font-size: 1rem; }
 .series-book-action:disabled { color: var(--muted); background: var(--surface-tint); border-color: var(--theme-border); opacity: 1; cursor: default; }
 .series-note { margin: 0; color: var(--muted); font-size: .73rem; }
 .delete-dialog { width: min(470px, calc(100% - 28px)); border: 1px solid var(--theme-border); }
@@ -440,50 +473,55 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .toast { position: fixed; left: 50%; bottom: 22px; z-index: 30; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); padding: 12px 16px; color: var(--text); background: var(--background); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); text-align: center; font-size: .82rem; font-weight: 700; }
 .toast.error { background: var(--danger); }
 
-/* Capacitor-Android: Die Browseransicht bleibt von diesen Regeln unberührt. */
-.platform-android,
-.platform-android body { overscroll-behavior: none; }
-.platform-android.dialog-scroll-locked { overflow: hidden; }
-.platform-android dialog[open] { overscroll-behavior: contain; }
-.platform-android .book-dialog .series-list { max-height: none; overflow: visible; padding-right: 0; }
-.platform-android #book-grid .book-card-info,
-.platform-android #book-grid .rating-display,
-.platform-android #book-grid .review-excerpt,
-.platform-android #book-grid .card-actions,
-.platform-android #book-grid .series-collection-card .button { display: none; }
-.platform-android #book-grid .book-meta { min-height: 0; margin-bottom: 0; }
-.platform-android #book-grid .book-body { flex: 0 0 auto; }
-.platform-android #book-grid .book-title { font-size: .86rem; line-height: 1.25; }
-.platform-android #book-grid .book-author { font-size: .72rem; line-height: 1.3; }
-.platform-android #book-grid .android-open-card { cursor: pointer; touch-action: pan-y; }
-.platform-android button,
-.platform-android [role="button"],
-.platform-android select,
-.platform-android a {
+/* Kompakte Touch-Oberfläche für Capacitor und mobile Webbrowser. */
+.platform-mobile,
+.platform-mobile body { overscroll-behavior: none; }
+html.dialog-scroll-locked { overflow: hidden; }
+.platform-mobile dialog[open] { overscroll-behavior: contain; }
+.platform-mobile .book-dialog .series-list { max-height: none; overflow: visible; padding-right: 0; }
+.platform-mobile #book-grid .book-card-info,
+.platform-mobile #book-grid .rating-display,
+.platform-mobile #book-grid .review-excerpt,
+.platform-mobile #book-grid .card-actions,
+.platform-mobile #book-grid .series-collection-card .button { display: none; }
+.platform-mobile #book-grid .book-meta { min-height: 0; margin-bottom: 0; }
+.platform-mobile #book-grid .book-body { flex: 0 0 auto; }
+.platform-mobile #book-grid .book-title { font-size: .86rem; line-height: 1.25; }
+.platform-mobile #book-grid .book-author { font-size: .72rem; line-height: 1.3; }
+.platform-mobile #book-grid .android-open-card { cursor: pointer; touch-action: pan-y; }
+.platform-mobile button,
+.platform-mobile [role="button"],
+.platform-mobile select,
+.platform-mobile a {
   touch-action: pan-y;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Android-WebView kann :hover nach einer Wischgeste festhalten. */
-.platform-android .button-primary:hover { background: var(--accent); }
-.platform-android .button-danger:hover { filter: none; }
-.platform-android .button-secondary:hover { background: var(--surface-tint); border-color: var(--theme-border); }
-.platform-android .text-button:hover { color: var(--muted); text-decoration: none; }
-.platform-android .book-detail-trigger:hover { background: var(--soft-tint); }
-.platform-android .book-title-link:hover { color: inherit; text-decoration: none; }
-.platform-android .icon-button:hover { color: var(--muted); border-color: var(--border); }
-.platform-android .collection-review-button:not(.rated):hover { color: var(--muted); border-color: var(--theme-border); }
-.platform-android .book-card-info:hover,
-.platform-android .series-info-button:hover,
-.platform-android .book-dialog-info-button:hover { color: var(--muted); border-color: var(--border); }
-.platform-android .suggestion-main:hover,
-.platform-android .suggestion-all:hover,
-.platform-android .sort-menu button:hover,
-.platform-android .theme-option:hover,
-.platform-android .reading-history-toggle:hover { background: transparent; }
+/* Touch-Browser können :hover nach einer Wischgeste festhalten. */
+.platform-mobile .button-primary:hover { background: var(--accent); }
+.platform-mobile .button-danger:hover { filter: none; }
+.platform-mobile .button-secondary:hover { background: var(--surface-tint); border-color: var(--theme-border); }
+.platform-mobile .text-button:hover { color: var(--muted); text-decoration: none; }
+.platform-mobile .book-detail-trigger:hover { background: var(--soft-tint); }
+.platform-mobile .book-title-link:hover { color: inherit; text-decoration: none; }
+.platform-mobile .icon-button:hover { color: var(--muted); border-color: var(--border); }
+.platform-mobile .collection-review-button:not(.rated):hover { color: var(--muted); border-color: var(--theme-border); }
+.platform-mobile .book-card-info:hover,
+.platform-mobile .series-info-button:hover,
+.platform-mobile .book-dialog-info-button:hover { color: var(--muted); border-color: var(--border); }
+.platform-mobile .suggestion-main:hover,
+.platform-mobile .suggestion-all:hover,
+.platform-mobile .sort-menu button:hover,
+.platform-mobile .theme-option:hover,
+.platform-mobile .reading-history-toggle:hover { background: transparent; }
 
 @media (max-width: 680px) {
   .site-header { height: 66px; padding-inline: 16px; }
+  .header-identity { max-width: 112px; }
+  .brand { font-size: .98rem; }
+  .header-greeting { font-size: .63rem; }
+  .header-actions { gap: 5px; }
+  .site-header .button { padding-inline: 10px; }
   .appearance-label { display: none; }
   .settings-label { display: none; }
   .app-shell { padding: 0 16px 54px; }
@@ -512,6 +550,13 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
   .book-grid:not(.search-grid) .book-card { position: relative; border-radius: 10px; }
   .book-grid:not(.search-grid) .book-cover-wrap { aspect-ratio: 2 / 3; }
   .book-grid:not(.search-grid) .book-cover { padding: 6px; filter: drop-shadow(0 4px 7px rgba(0,0,0,.35)); }
+  #book-grid > .book-card:not(.series-collection-card) .book-cover {
+    top: 10px;
+    left: 12px;
+    width: calc(100% - 24px);
+    height: calc(100% - 20px);
+    padding: 0;
+  }
   .book-grid:not(.search-grid) .book-placeholder { width: min(62%, 72px); padding: 5px; }
   .book-grid:not(.search-grid) .book-placeholder-mark { font-size: .9rem; }
   .book-grid:not(.search-grid) .book-placeholder-label { display: none; }
@@ -570,14 +615,18 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
   .series-book-actions { grid-column: 1 / -1; width: 100%; flex-wrap: wrap; }
   .series-book-action { flex: 1; width: auto; }
   .series-status-select { flex: 1 1 100%; width: 100%; }
-  .collection-book-row { grid-template-columns: 36px minmax(0, 1fr) auto; }
+  .collection-book-row { grid-template-columns: 36px minmax(0, 1fr); }
   .collection-book-row .suggestion-cover { width: 36px; height: 49px; }
-  .collection-book-row .status-select { grid-column: 2 / -1; grid-row: 2; }
-  .collection-review-button { grid-column: 3; grid-row: 1; }
+  .collection-book-actions { grid-column: 1 / -1; width: 100%; flex-wrap: wrap; }
+  .collection-book-actions .status-select { flex: 1 1 100%; width: 100%; }
+  .collection-book-add { flex: 1; }
   .book-dialog-header-actions { gap: 6px; }
   .book-info-grid { grid-template-columns: 1fr; }
   .book-info-actions .button { width: 100%; }
   .dialog .settings-item { grid-template-columns: 1fr; gap: 10px; }
+  .manual-form-grid { grid-template-columns: 1fr; }
+  .manual-field-wide { grid-column: auto; }
+  .manual-dialog .dialog-actions { position: sticky; bottom: 0; padding-top: 10px; background: var(--surface-tint); }
 }
 
 @media (max-width: 410px) {

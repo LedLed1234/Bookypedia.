@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de" data-theme="blue-white">
+<html lang="de" data-theme="blue-white" data-book-info-symbol="{{ '🧸!' if current_user['username']|lower == 'carli' else '!' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,8 +11,14 @@
     try {
       const isCapacitorAndroid = window.Capacitor?.getPlatform?.() === "android";
       const isBookypediaAndroid = navigator.userAgent.includes("BookypediaAndroid");
+      const isMobileBrowser = navigator.userAgentData?.mobile === true
+        || /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent)
+        || (navigator.maxTouchPoints > 1 && window.matchMedia("(max-width: 900px)").matches);
       if (isCapacitorAndroid || isBookypediaAndroid) {
         document.documentElement.classList.add("platform-android");
+      }
+      if (isCapacitorAndroid || isBookypediaAndroid || isMobileBrowser) {
+        document.documentElement.classList.add("platform-mobile");
       }
     } catch (_error) {}
   </script>
@@ -32,14 +38,15 @@
       }
     } catch (_error) {}
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=35">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=39"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=43">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=48"></script>
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="#top" aria-label="Bookypedia Startseite">
-      <span>Bookypedia.</span>
-    </a>
+    <div class="header-identity">
+      <a class="brand" href="#top" aria-label="Epiloguehouse Startseite">Epiloguehouse</a>
+      <span class="header-greeting">Hello, {{ current_user['display_name'] }}</span>
+    </div>
     <div class="header-actions">
       <div class="appearance-picker">
         <button class="button button-secondary appearance-button" id="appearance-button" type="button" aria-haspopup="menu" aria-expanded="false">
@@ -201,29 +208,66 @@
     </div>
   </dialog>
 
-  <dialog id="manual-dialog" class="dialog">
-    <form method="dialog" class="dialog-shell" id="manual-form">
+  <dialog id="manual-dialog" class="dialog manual-dialog">
+    <form method="dialog" class="dialog-shell manual-dialog-shell" id="manual-form">
       <div class="dialog-header">
         <div><p class="eyebrow">Ohne Suchergebnis</p><h2>Buch selbst anlegen</h2></div>
         <button class="icon-button dialog-close" type="button" aria-label="Dialog schließen">×</button>
       </div>
-      <label>Titel <span aria-hidden="true">*</span>
-        <input name="title" required maxlength="300" autocomplete="off">
-      </label>
-      <label>Autor oder Autorin
-        <input name="authors" maxlength="500" autocomplete="off" placeholder="z. B. Ursula K. Le Guin">
-      </label>
-      <label>ISBN
-        <input name="isbn" inputmode="numeric" autocomplete="off" placeholder="optional, 10 oder 13 Stellen">
-      </label>
-      <label>Liste
-        <select name="status">
-          <option value="unread">Ungelesen (im Besitz)</option>
-          <option value="reading">Lese ich</option>
-          <option value="read">Gelesen</option>
-          <option value="want_to_read">Wunschliste</option>
-        </select>
-      </label>
+      <div class="manual-form-grid">
+        <label class="manual-field-wide"><span>Titel <span aria-hidden="true">*</span></span>
+          <input name="title" required maxlength="300" autocomplete="off">
+        </label>
+        <label>Autor oder Autorin
+          <input name="authors" maxlength="500" autocomplete="off" placeholder="z. B. Ursula K. Le Guin">
+        </label>
+        <label>ISBN
+          <input name="isbn" autocomplete="off" placeholder="optional, 10 oder 13 Stellen">
+        </label>
+        <label>Liste
+          <select name="status">
+            <option value="unread">Ungelesen (im Besitz)</option>
+            <option value="reading">Lese ich</option>
+            <option value="read">Gelesen</option>
+            <option value="want_to_read">Wunschliste</option>
+          </select>
+        </label>
+      </div>
+      <section class="manual-metadata" aria-labelledby="manual-metadata-heading">
+        <div class="manual-section-heading">
+          <h3 id="manual-metadata-heading">Weitere Buchinformationen</h3>
+          <p>Alle Angaben sind optional.</p>
+        </div>
+        <div class="manual-form-grid">
+          <label>Untertitel
+            <input name="subtitle" maxlength="1000" autocomplete="off">
+          </label>
+          <label>Originaltitel
+            <input name="original_title" maxlength="1000" autocomplete="off">
+          </label>
+          <label>Verlag
+            <input name="publisher" maxlength="1000" autocomplete="off">
+          </label>
+          <label>Erscheinungsdatum
+            <input name="publish_date" maxlength="250" autocomplete="off" placeholder="z. B. 15. Oktober 2024">
+          </label>
+          <label>Seitenzahl
+            <input name="page_count" type="number" min="1" step="1" inputmode="numeric" placeholder="z. B. 416">
+          </label>
+          <label>Sprache
+            <input name="language" maxlength="100" autocomplete="off" placeholder="z. B. Deutsch">
+          </label>
+          <label>Format
+            <input name="physical_format" maxlength="250" autocomplete="off" placeholder="z. B. Hardcover">
+          </label>
+          <label class="manual-field-wide">Themen
+            <input name="subjects" maxlength="1000" autocomplete="off" placeholder="Kommagetrennt, z. B. Fantasy, Abenteuer">
+          </label>
+          <label class="manual-field-wide">Beschreibung
+            <textarea name="description" rows="5" maxlength="50000" placeholder="Worum geht es in diesem Buch?"></textarea>
+          </label>
+        </div>
+      </section>
       <div class="dialog-actions">
         <button class="button button-secondary dialog-close" type="button">Abbrechen</button>
         <button class="button button-primary" type="submit">Buch speichern</button>
@@ -274,6 +318,13 @@
         <button class="icon-button dialog-close" type="button" aria-label="Dialog schließen">×</button>
       </div>
       <div class="collection-book-list" id="collection-book-list"></div>
+      <section class="collection-other-series" id="collection-other-series" hidden>
+        <button class="collection-other-toggle" id="collection-other-toggle" type="button" aria-controls="collection-other-list" aria-expanded="false">
+          <span id="collection-other-toggle-label">Weitere Bände anzeigen</span>
+          <span class="collection-other-chevron" aria-hidden="true">⌄</span>
+        </button>
+        <div class="collection-book-list collection-other-list" id="collection-other-list" hidden></div>
+      </section>
       <div class="dialog-actions">
         <button class="button button-secondary dialog-close" type="button">Schließen</button>
       </div>
@@ -290,7 +341,7 @@
           <p class="book-dialog-original" id="book-dialog-original" hidden></p>
         </div>
         <div class="book-dialog-header-actions">
-          <button class="icon-button book-dialog-info-button" id="book-dialog-info" type="button" aria-label="Weitere Buchinformationen anzeigen" title="Weitere Buchinformationen">ⓘ</button>
+          <button class="icon-button book-dialog-info-button" id="book-dialog-info" type="button" aria-label="Weitere Buchinformationen anzeigen" title="Weitere Buchinformationen">{{ '🧸!' if current_user['username']|lower == 'carli' else '!' }}</button>
           <button class="icon-button dialog-close" type="button" aria-label="Dialog schließen">×</button>
         </div>
       </div>
@@ -298,7 +349,7 @@
         <section class="reading-history" id="reading-history" aria-labelledby="reading-history-heading" hidden>
           <div class="reading-history-heading-row">
             <p class="eyebrow" id="reading-history-heading">Leseverlauf</p>
-            <button class="reading-history-toggle" id="reading-history-toggle" type="button" aria-controls="reading-history-list" aria-expanded="true" hidden>
+            <button class="reading-history-toggle" id="reading-history-toggle" type="button" aria-controls="reading-history-list" aria-expanded="false" hidden>
               <span>Ausklappen</span><span class="reading-history-chevron" aria-hidden="true">⌄</span>
             </button>
           </div>

@@ -184,11 +184,15 @@ def cached_provider_search(provider, query, suggestions=False, limit=SEARCH_RESU
         if suggestions
         else provider.search(query, limit=limit)
     )
-    with _SEARCH_CACHE_LOCK:
-        _SEARCH_CACHE[key] = (now, results)
-        _SEARCH_CACHE.move_to_end(key)
-        while len(_SEARCH_CACHE) > SEARCH_CACHE_MAX_ENTRIES:
-            _SEARCH_CACHE.popitem(last=False)
+    # Leere Antworten können bei Open Library vorübergehend auftreten. Würden
+    # wir sie cachen, bliebe ein vorhandenes Buch trotz späterer Erholung des
+    # Anbieters mehrere Minuten unsichtbar.
+    if results:
+        with _SEARCH_CACHE_LOCK:
+            _SEARCH_CACHE[key] = (monotonic(), results)
+            _SEARCH_CACHE.move_to_end(key)
+            while len(_SEARCH_CACHE) > SEARCH_CACHE_MAX_ENTRIES:
+                _SEARCH_CACHE.popitem(last=False)
     return results
 
 

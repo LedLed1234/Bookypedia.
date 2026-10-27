@@ -44,16 +44,17 @@ bestehenden Verbindung normalerweise das Schließen und erneute Öffnen der App.
 
 ## Android-spezifische Weboberfläche
 
-Die Templates erkennen den Android-Wrapper über den ergänzten User-Agent und
-setzen auf dem HTML-Element die Klasse `.platform-android`. In JavaScript steht
-zusätzlich `IS_ANDROID_APP` zur Verfügung. Damit lassen sich Änderungen nur in
-der installierten App aktivieren, ohne die Browseransicht zu verändern.
+Die Templates erkennen den Android-Wrapper sowie mobile Touch-Browser und
+setzen auf dem HTML-Element die Klasse `.platform-mobile`. In JavaScript steht
+zusätzlich `IS_MOBILE_UI` zur Verfügung. Damit lässt sich die kompakte
+Touch-Oberfläche gezielt anpassen, ohne die Desktopansicht zu verändern.
 
 Solche Änderungen gehören weiterhin zur serverseitigen Weboberfläche. Nach
-Commit, Push und VPS-Deployment lädt eine bereits installierte Produktions-App
-sie von `https://epiloguehouse.de`; eine neue APK ist dafür nicht erforderlich.
-Eine Media Query nach Bildschirmbreite betrifft dagegen sowohl die App als auch
-einen normalen Browser auf einem Smartphone.
+Commit, Push und VPS-Deployment laden eine bereits installierte Produktions-App
+und mobile Browser sie von `https://epiloguehouse.de`; eine neue APK ist dafür
+nicht erforderlich. Die zusätzliche Klasse `.platform-android` bleibt für
+eventuelle wirklich native Sonderfälle ausschließlich im Capacitor-Wrapper
+erhalten.
 
 Eine neue APK ist notwendig bei Änderungen an:
 

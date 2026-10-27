@@ -13,9 +13,12 @@ automatische Umschaltung zwischen lokalem Entwicklungsserver und VPS.
 
 ### Web-App lokal entwickeln
 
-Im Projektverzeichnis den Entwicklungscontainer starten:
+Wenn der Docker-Autostart deaktiviert ist, zuerst Docker und anschließend den
+Entwicklungscontainer starten:
 
 ```bash
+sudo systemctl start docker
+cd ~/readmore
 docker compose up --build -d
 ```
 
@@ -46,16 +49,16 @@ werden. Ein neuer Android-Build ist nur bei Änderungen am nativen Wrapper,
 Capacitor, App-Icon, App-Namen, Berechtigungen oder Android-Konfigurationen
 erforderlich.
 
-Für Änderungen ausschließlich innerhalb der installierten Android-App stehen
-in CSS die Selektoren unter `.platform-android` und in JavaScript die Konstante
-`IS_ANDROID_APP` zur Verfügung. Eine normale Media Query nach Bildschirmbreite
-betrifft dagegen auch mobile Browser.
+Für die kompakte Touch-Oberfläche der installierten Android-App und mobiler
+Webbrowser stehen in CSS die Selektoren unter `.platform-mobile` und in
+JavaScript die Konstante `IS_MOBILE_UI` zur Verfügung. Eine normale Media Query
+nach Bildschirmbreite betrifft dagegen auch schmale Desktop-Browser.
 
 | Art der Änderung                                     | VPS neu deployen | APK neu bauen |
 | ---------------------------------------------------- | ---------------- | ------------- |
 | Backend, Templates, API oder Datenbanklogik          | ja               | nein          |
 | Allgemeines CSS oder JavaScript                      | ja               | nein          |
-| `.platform-android`-CSS oder `IS_ANDROID_APP`-Logik  | ja               | nein          |
+| `.platform-mobile`-CSS oder `IS_MOBILE_UI`-Logik     | ja               | nein          |
 | App-Icon, Splashscreen, App-Name oder Berechtigungen | nein             | ja            |
 | Capacitor-Plugin, native Android-Datei oder App-ID   | nein             | ja            |
 | Produktionsdomain in der Android-App                 | nein             | ja            |
@@ -94,7 +97,7 @@ direkt vom VPS. Datenbank, Konten, `.env` und Caddy-Zertifikate bleiben beim
 Neubau der Container erhalten. Niemals `docker compose down -v` verwenden,
 wenn die Produktionsdaten erhalten bleiben sollen.
 
-### Benutzerkonten anlegen
+### Benutzerkonten anlegen Lokal
 
 Die lokale Entwicklungsdatenbank und die Produktionsdatenbank auf dem VPS sind
 getrennt. Deshalb hängt der richtige Befehl von der gewünschten Umgebung ab.
@@ -105,7 +108,7 @@ Lokal ein Testkonto anlegen:
 docker compose exec app flask --app run.py user create led
 ```
 
-Ein echtes Konto auf dem öffentlichen VPS anlegen:
+Ein **echtes** Konto auf dem öffentlichen VPS anlegen:
 
 ```bash
 ssh bookypedia-vps

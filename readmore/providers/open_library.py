@@ -14,6 +14,7 @@ class OpenLibraryProvider(BookProvider):
     SEARCH_URL = "https://openlibrary.org/search.json"
     API_URL = "https://openlibrary.org"
     REQUEST_HEADERS = {"User-Agent": "Bookypedia/1.0 (personal local reading manager)"}
+    SEARCH_TIMEOUTS = ((3.05, 8), (2, 4))
 
     def search(self, query, limit=12):
         results = self._request(query, limit)
@@ -33,37 +34,57 @@ class OpenLibraryProvider(BookProvider):
         return _closest_results(query, merged, limit)
 
     def suggest(self, query, limit=6):
-        # Open Library korrigiert Tippfehler nicht selbst. Ein etwas kürzerer
-        # Präfix des letzten Wortes findet sowohl unvollständige Eingaben als
-        # auch kleine Endungsfehler (z. B. "red risin" -> "red rising").
-        candidates = self._request(_tolerant_prefix_query(query), max(12, limit * 2))
-        return _closest_results(query, candidates, limit) or self._request(query, limit)
+        # Eine direkte Relevanzsuche verhindert, dass vollständige Titel wie
+        # "Babel" durch einen zu breiten Präfix ("bab*") von Baby-/Baba-
+        # Treffern verdrängt werden. Der tolerante Präfix bleibt als Fallback
+        # für unvollständige Eingaben und kleine Tippfehler erhalten.
+        request_limit = max(12, limit * 2)
+        direct = self._request(query, request_limit, retry=False)
+        if any(_book_match_score(query, book) >= 2.5 for book in direct):
+            return _closest_results(query, direct, limit)
+        fallback = self._request(
+            _tolerant_prefix_query(query), request_limit, retry=False
+        )
+        return _closest_results(query, _deduplicate_books([*fallback, *direct]), limit)
 
-    def _request(self, query, limit):
-        try:
-            response = requests.get(
-                self.SEARCH_URL,
-                params={
-                    "q": query,
-                    "limit": limit,
-                    "fields": (
-                        "key,title,author_name,author_alternative_name,isbn,cover_i,"
-                        "first_publish_year,number_of_pages_median,editions,"
-                        "editions.key,editions.title,editions.number_of_pages,"
-                        "editions.author_name,editions.isbn,editions.cover_i,"
-                        "editions.language,editions.publisher,editions.publish_date,"
-                        "editions.physical_format"
-                    ),
-                },
-                timeout=(3.05, 8),
-                headers=self.REQUEST_HEADERS,
-            )
-            response.raise_for_status()
-        except requests.RequestException as error:
-            raise ProviderUnavailable("Open Library ist derzeit nicht erreichbar.") from error
+    def _request(self, query, limit, *, retry=True):
+        params = {
+            "q": query,
+            "limit": limit,
+            "fields": (
+                "key,title,author_name,author_alternative_name,isbn,cover_i,"
+                "first_publish_year,number_of_pages_median,editions,"
+                "editions.key,editions.title,editions.number_of_pages,"
+                "editions.author_name,editions.isbn,editions.cover_i,"
+                "editions.language,editions.publisher,editions.publish_date,"
+                "editions.physical_format"
+            ),
+        }
+        payload = None
+        last_error = None
+        timeouts = self.SEARCH_TIMEOUTS if retry else self.SEARCH_TIMEOUTS[:1]
+        for attempt, timeout in enumerate(timeouts):
+            try:
+                response = requests.get(
+                    self.SEARCH_URL,
+                    params=params,
+                    timeout=timeout,
+                    headers=self.REQUEST_HEADERS,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict):
+                    raise ValueError("Open Library hat keine gültige JSON-Antwort geliefert.")
+                break
+            except (requests.RequestException, ValueError) as error:
+                last_error = error
+                if attempt + 1 >= len(timeouts) or not _retryable_search_error(error):
+                    raise ProviderUnavailable("Open Library ist derzeit nicht erreichbar.") from error
+        if payload is None:
+            raise ProviderUnavailable("Open Library ist derzeit nicht erreichbar.") from last_error
 
         books = []
-        for item in response.json().get("docs", []):
+        for item in payload.get("docs", []):
             edition = _matching_edition(item)
             original_title = str(item.get("title") or "").strip()
             title = str(edition.get("title") or original_title).strip()
@@ -211,13 +232,23 @@ def _prefix_query(query):
     return f"title:({prefix}) OR author:({prefix}) OR isbn:({prefix})"
 
 
+def _retryable_search_error(error):
+    if isinstance(error, ValueError):
+        return True
+    if isinstance(error, requests.HTTPError):
+        response = error.response
+        status = response.status_code if response is not None else None
+        return status == 429 or bool(status and status >= 500)
+    return isinstance(error, (requests.ConnectionError, requests.Timeout))
+
+
 def _tolerant_prefix_query(query):
     tokens = [token for token in str(query).split() if token]
     if not tokens:
         return ""
     last = tokens[-1]
-    if len(last) >= 5:
-        last = last[:max(3, len(last) - 3)]
+    if len(last) >= 7:
+        last = last[:-2]
     elif len(last) >= 3:
         last = last[:-1]
     escaped = [_escape_solr(token) for token in [*tokens[:-1], last]]

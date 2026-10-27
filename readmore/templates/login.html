@@ -9,7 +9,11 @@
   <script>
     try {
       const android = window.Capacitor?.getPlatform?.() === "android" || navigator.userAgent.includes("BookypediaAndroid");
+      const mobileBrowser = navigator.userAgentData?.mobile === true
+        || /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent)
+        || (navigator.maxTouchPoints > 1 && window.matchMedia("(max-width: 900px)").matches);
       if (android) document.documentElement.classList.add("platform-android");
+      if (android || mobileBrowser) document.documentElement.classList.add("platform-mobile");
       const themeDefaultVersion = "blue-white-v1";
       if (localStorage.getItem("bookypedia-theme-default-version") !== themeDefaultVersion) {
         localStorage.setItem("bookypedia-theme", "blue-white");
@@ -20,7 +24,7 @@
     } catch (_error) {}
   </script>
   <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=35">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=37">
 </head>
 <body class="auth-page">
   <main class="auth-shell">
