@@ -1,7 +1,7 @@
-const CACHE_NAME = "bookypedia-shell-v51";
+const CACHE_NAME = "bookypedia-shell-v52";
 const SHELL = [
-  "/static/css/app.css?v=44",
-  "/static/js/app.js?v=48",
+  "/static/css/app.css?v=45",
+  "/static/js/app.js?v=49",
   "/static/manifest.webmanifest",
   "/static/config.json",
   "/static/icons/epiloguehouse-logo-header.png",

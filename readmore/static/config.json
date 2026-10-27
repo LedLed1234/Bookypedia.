@@ -2,7 +2,8 @@
   "defaults": {
     "theme": "blue-white",
     "searchResultLimit": 4,
-    "startView": "all"
+    "startView": "all",
+    "mobileTextSize": 3
   },
   "options": {
     "themes": [
@@ -14,6 +15,13 @@
       { "value": "light", "label": "Light" }
     ],
     "searchResultLimits": [4, 6, 8, 12],
+    "mobileTextSizes": [
+      { "value": 1, "label": "Stufe 1 – Kompakt" },
+      { "value": 2, "label": "Stufe 2" },
+      { "value": 3, "label": "Stufe 3 – Standard" },
+      { "value": 4, "label": "Stufe 4" },
+      { "value": 5, "label": "Stufe 5 – Groß" }
+    ],
     "startViews": [
       { "value": "all", "label": "Alle" },
       { "value": "unread", "label": "Ungelesen" },

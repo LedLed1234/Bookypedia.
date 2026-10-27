@@ -14,6 +14,12 @@
         || (navigator.maxTouchPoints > 1 && window.matchMedia("(max-width: 900px)").matches);
       if (android) document.documentElement.classList.add("platform-android");
       if (android || mobileBrowser) document.documentElement.classList.add("platform-mobile");
+      const storedMobileTextSize = Number(localStorage.getItem("bookypedia-mobile-text-size"));
+      document.documentElement.dataset.mobileTextSize = String(
+        Number.isInteger(storedMobileTextSize) && storedMobileTextSize >= 1 && storedMobileTextSize <= 5
+          ? storedMobileTextSize
+          : 3
+      );
       const themeDefaultVersion = "blue-white-v1";
       if (localStorage.getItem("bookypedia-theme-default-version") !== themeDefaultVersion) {
         localStorage.setItem("bookypedia-theme", "blue-white");
@@ -24,7 +30,7 @@
     } catch (_error) {}
   </script>
   <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=2">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=44">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=45">
 </head>
 <body class="auth-page">
   <main class="auth-shell">

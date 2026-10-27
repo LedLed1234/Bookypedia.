@@ -20,6 +20,12 @@
       if (isCapacitorAndroid || isBookypediaAndroid || isMobileBrowser) {
         document.documentElement.classList.add("platform-mobile");
       }
+      const storedMobileTextSize = Number(localStorage.getItem("bookypedia-mobile-text-size"));
+      document.documentElement.dataset.mobileTextSize = String(
+        Number.isInteger(storedMobileTextSize) && storedMobileTextSize >= 1 && storedMobileTextSize <= 5
+          ? storedMobileTextSize
+          : 3
+      );
     } catch (_error) {}
   </script>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
@@ -38,8 +44,8 @@
       }
     } catch (_error) {}
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=44">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=48"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=45">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=49"></script>
 </head>
 <body>
   <header class="site-header">
@@ -174,7 +180,7 @@
   <dialog id="settings-dialog" class="dialog settings-dialog" aria-labelledby="settings-dialog-title">
     <div class="dialog-shell settings-dialog-shell">
       <div class="dialog-header">
-        <div><p class="eyebrow">Bookypedia anpassen</p><h2 id="settings-dialog-title">Settings</h2></div>
+        <div><p class="eyebrow">Epiloguehouse anpassen</p><h2 id="settings-dialog-title">Settings</h2></div>
         <button class="icon-button dialog-close" type="button" aria-label="Settings schließen">×</button>
       </div>
       <div class="settings-list">
@@ -197,6 +203,12 @@
         <label class="settings-item" for="settings-start-view">
           <span><strong>Startansicht</strong><small>Diese Liste wird beim Öffnen zuerst angezeigt</small></span>
           <select id="settings-start-view">
+            <option>Wird geladen …</option>
+          </select>
+        </label>
+        <label class="settings-item mobile-text-size-setting" for="settings-mobile-text-size">
+          <span><strong>Textgröße</strong><small>Schrift und Markenbereich auf diesem Mobilgerät</small></span>
+          <select id="settings-mobile-text-size">
             <option>Wird geladen …</option>
           </select>
         </label>

@@ -1125,6 +1125,7 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="settings-theme"' in html
     assert 'id="settings-search-limit"' in html
     assert 'id="settings-start-view"' in html
+    assert 'id="settings-mobile-text-size"' in html
     assert 'data-filter="unread"' in html
     assert '<span>Ungelesen</span>' in html
     assert '<span>Lese ich</span>' in html
@@ -1151,8 +1152,10 @@ def test_frontend_exposes_all_appearance_palettes(client):
         "theme": "blue-white",
         "searchResultLimit": 4,
         "startView": "all",
+        "mobileTextSize": 3,
     }
     assert config["options"]["searchResultLimits"] == [4, 6, 8, 12]
+    assert [size["value"] for size in config["options"]["mobileTextSizes"]] == [1, 2, 3, 4, 5]
     assert [view["value"] for view in config["options"]["startViews"]] == [
         "all",
         "unread",

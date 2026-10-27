@@ -123,6 +123,8 @@ const bookDialogInfoButton = document.querySelector("#book-dialog-info");
 const bookInfoBackButton = document.querySelector("#book-info-back");
 const bookInfoGrid = document.querySelector("#book-info-grid");
 const bookInfoStatus = document.querySelector("#book-info-status");
+const bookDescriptionSection = document.querySelector("#book-description");
+const bookDescriptionToggle = document.querySelector("#book-description-toggle");
 const seriesHeading = document.querySelector("#series-heading");
 const seriesPosition = document.querySelector("#series-position");
 const seriesContent = document.querySelector("#series-content");
@@ -136,6 +138,7 @@ const settingsDialog = document.querySelector("#settings-dialog");
 const settingsThemeSelect = document.querySelector("#settings-theme");
 const settingsSearchLimitSelect = document.querySelector("#settings-search-limit");
 const settingsStartViewSelect = document.querySelector("#settings-start-view");
+const settingsMobileTextSizeSelect = document.querySelector("#settings-mobile-text-size");
 const THEME_COLORS = {
   red: "#101512",
   "blue-white": "#101512",
@@ -169,7 +172,7 @@ const LANGUAGE_LABELS = {
   por: "Portugiesisch",
 };
 const FALLBACK_APP_CONFIG = {
-  defaults: { theme: "blue-white", searchResultLimit: 4, startView: "all" },
+  defaults: { theme: "blue-white", searchResultLimit: 4, startView: "all", mobileTextSize: 3 },
   options: {
     themes: [
       { value: "red", label: "Red" },
@@ -180,6 +183,13 @@ const FALLBACK_APP_CONFIG = {
       { value: "light", label: "Light" },
     ],
     searchResultLimits: [4, 6, 8, 12],
+    mobileTextSizes: [
+      { value: 1, label: "Stufe 1 – Kompakt" },
+      { value: 2, label: "Stufe 2" },
+      { value: 3, label: "Stufe 3 – Standard" },
+      { value: 4, label: "Stufe 4" },
+      { value: 5, label: "Stufe 5 – Groß" },
+    ],
     startViews: [
       { value: "all", label: "Alle" },
       { value: "unread", label: "Ungelesen" },
@@ -219,6 +229,7 @@ async function loadAppConfig() {
     appConfig.options.searchResultLimits.map((value) => ({ value, label: `${value} Bücher` })),
   );
   populateSelect(settingsStartViewSelect, appConfig.options.startViews);
+  populateSelect(settingsMobileTextSizeSelect, appConfig.options.mobileTextSizes);
 }
 
 function setAppearanceMenu(open) {
@@ -273,6 +284,17 @@ function applySearchResultLimit(value, persist = true) {
   searchCache.clear();
   if (persist) {
     try { localStorage.setItem("bookypedia-search-limit", String(limit)); } catch (_error) {}
+  }
+}
+
+function applyMobileTextSize(value, persist = true) {
+  const configuredSizes = appConfig.options.mobileTextSizes.map(({ value: size }) => Number(size));
+  const defaultSize = Number(appConfig.defaults.mobileTextSize) || 3;
+  const size = configuredSizes.includes(Number(value)) ? Number(value) : defaultSize;
+  document.documentElement.dataset.mobileTextSize = String(size);
+  settingsMobileTextSizeSelect.value = String(size);
+  if (persist) {
+    try { localStorage.setItem("bookypedia-mobile-text-size", String(size)); } catch (_error) {}
   }
 }
 
@@ -1182,10 +1204,9 @@ function renderBookInfo() {
     bookInfoGrid.append(item);
   });
 
-  const descriptionSection = document.querySelector("#book-description");
   const descriptionCopy = document.querySelector("#book-description-copy");
   descriptionCopy.textContent = metadata.description || "";
-  descriptionSection.hidden = !metadata.description;
+  bookDescriptionSection.hidden = !metadata.description;
   updateDescriptionExpansion(metadata.description || "");
 
   const subjectSection = document.querySelector("#book-subjects");
@@ -1213,12 +1234,12 @@ function renderBookInfo() {
 
 function updateDescriptionExpansion(description) {
   const copy = document.querySelector("#book-description-copy");
-  const toggle = document.querySelector("#book-description-toggle");
   const canExpand = String(description || "").trim().length > 260;
   copy.classList.toggle("collapsed", canExpand && !state.descriptionExpanded);
-  toggle.hidden = !canExpand;
-  toggle.textContent = state.descriptionExpanded ? "Weniger anzeigen" : "Mehr anzeigen";
-  toggle.setAttribute("aria-expanded", String(state.descriptionExpanded));
+  bookDescriptionSection.classList.toggle("expandable", canExpand);
+  bookDescriptionToggle.hidden = !canExpand;
+  bookDescriptionToggle.textContent = state.descriptionExpanded ? "Weniger anzeigen" : "Mehr anzeigen";
+  bookDescriptionToggle.setAttribute("aria-expanded", String(state.descriptionExpanded));
 }
 
 async function loadBookMetadata(book, metadataIdentity) {
@@ -2130,6 +2151,10 @@ settingsSearchLimitSelect.addEventListener("change", () => {
   showToast(`Künftig werden ${state.searchResultLimit} Suchergebnisse angezeigt.`);
 });
 settingsStartViewSelect.addEventListener("change", () => applyStartView(settingsStartViewSelect.value));
+settingsMobileTextSizeSelect.addEventListener("change", () => {
+  applyMobileTextSize(settingsMobileTextSizeSelect.value);
+  showToast(`Mobile Textgröße: Stufe ${settingsMobileTextSizeSelect.value}.`);
+});
 sortButton.addEventListener("click", () => setSortMenu(sortMenu.hidden));
 sortOptions.forEach((option) => option.addEventListener("click", () => {
   applySort(option.dataset.sortOption);
@@ -2155,7 +2180,8 @@ document.querySelector("#empty-search").addEventListener("click", () => document
 document.querySelector("#close-search").addEventListener("click", () => { searchPanel.hidden = true; });
 bookDialogInfoButton.addEventListener("click", () => openBookInfo(state.detailBook));
 bookInfoBackButton.addEventListener("click", returnToBookDetails);
-document.querySelector("#book-description-toggle").addEventListener("click", () => {
+bookDescriptionSection.addEventListener("click", () => {
+  if (bookDescriptionToggle.hidden) return;
   state.descriptionExpanded = !state.descriptionExpanded;
   updateDescriptionExpansion(state.detailMetadata?.description || "");
 });
@@ -2204,16 +2230,19 @@ async function initializeApp() {
   let storedSort = "added_desc";
   let storedSearchLimit = appConfig.defaults.searchResultLimit;
   let storedStartView = appConfig.defaults.startView;
+  let storedMobileTextSize = appConfig.defaults.mobileTextSize;
   try {
     storedTheme = localStorage.getItem("bookypedia-theme") || storedTheme;
     storedSort = localStorage.getItem("bookypedia-sort") || storedSort;
     storedSearchLimit = localStorage.getItem("bookypedia-search-limit") || storedSearchLimit;
     storedStartView = localStorage.getItem("bookypedia-start-view") || storedStartView;
+    storedMobileTextSize = localStorage.getItem("bookypedia-mobile-text-size") || storedMobileTextSize;
   } catch (_error) {}
   applyTheme(storedTheme, false);
   applySort(storedSort, false);
   applySearchResultLimit(storedSearchLimit, false);
   applyStartView(storedStartView, false);
+  applyMobileTextSize(storedMobileTextSize, false);
 
   try {
     await loadBooks();
