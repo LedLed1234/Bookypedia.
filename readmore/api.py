@@ -13,6 +13,7 @@ from .db import get_db
 from .metadata_cache import enqueue_metadata_lookup, metadata_lookup_status
 from .providers import KNOWN_PROVIDERS, PrimaryFallbackProvider, get_provider
 from .providers.base import ProviderUnavailable
+from .search_cache import cached_catalogue_search
 from .series_cache import enqueue_series_lookup, get_cached_series, wake_series_worker
 from .text import identity_key, normalize_text
 
@@ -183,14 +184,27 @@ def cached_provider_search(provider, query, suggestions=False, limit=SEARCH_RESU
         if cached:
             del _SEARCH_CACHE[key]
 
+    if isinstance(provider, PrimaryFallbackProvider):
+        provider.search_callback = lambda name, instance, method, value, result_limit: (
+            cached_catalogue_search(
+                get_db(),
+                name,
+                instance,
+                method,
+                value,
+                result_limit,
+                logger=current_app.logger,
+            )
+        )
+
     results = (
         provider.suggest(query, limit=limit)
         if suggestions
         else provider.search(query, limit=limit)
     )
-    # Leere Antworten können bei Open Library vorübergehend auftreten. Würden
-    # wir sie cachen, bliebe ein vorhandenes Buch trotz späterer Erholung des
-    # Anbieters mehrere Minuten unsichtbar.
+    # Leere Antworten bleiben aus dem längeren L1-Cache heraus. Der persistente
+    # L2-Cache hält sie lediglich 30 Sekunden, um Wiederholungen beim Tippen zu
+    # dämpfen, ohne vorhandene Bücher länger unsichtbar zu machen.
     if results:
         with _SEARCH_CACHE_LOCK:
             _SEARCH_CACHE[key] = (monotonic(), results)

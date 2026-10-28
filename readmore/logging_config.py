@@ -20,6 +20,8 @@ EXTRA_FIELDS = (
     "user_id",
     "provider",
     "fallback_provider",
+    "cache_layer",
+    "search_kind",
     "provider_book_id",
     "lookup_status",
     "attempt",

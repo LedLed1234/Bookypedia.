@@ -68,7 +68,8 @@ Wichtige Tabellen:
 | `book_series` | Zuordnung gespeicherter Bücher zu Reihen |
 | `series_lookups` | Status und Wiederholungen der Reihenabfragen |
 | `metadata_lookups` | Status und Wiederholungen der Metadatenabfragen |
-| `book_metadata_cache` | gecachte Ausgabedetails von Open Library |
+| `book_metadata_cache` | gecachte Ausgabedetails der Buchanbieter |
+| `catalogue_search_cache` | persistente, anbieterbezogene Suchergebnisse |
 
 SQLite-Migrationen werden beim Anwendungsstart in `readmore/db.py` ausgeführt.
 Historische Zeitpunkte werden dabei nicht erfunden.
@@ -98,6 +99,15 @@ Die Konfigurationsdatei liefert die globalen Standardwerte. Benutzer können
 Haupt- und Fallback-Katalog in den Settings pro Browser beziehungsweise Gerät
 überschreiben. Die Auswahl liegt in `localStorage` und wird als erlaubte,
 serverseitig validierte Anbieterkennung an `/api/search` übergeben.
+
+Die Buchsuche verwendet zwei Cache-Ebenen. Ein kleiner L1-Cache im Prozess hält
+häufige Antworten fünf Minuten. Der gemeinsame L2-Cache in SQLite speichert
+Vorschläge 24 Stunden und vollständige Suchen sieben Tage; leere erfolgreiche
+Antworten nur 30 Sekunden. Fehler werden nicht gespeichert. Cache-Schlüssel
+enthalten einen SHA-256-Hash statt des lesbaren Suchbegriffs und sind nach
+Anbieter, Suchart und Ergebnislimit getrennt. Maximal 2.000 L2-Einträge bleiben
+erhalten. Abgelaufene Einträge werden nicht angezeigt, sondern durch die
+unveränderte Provider-Suche ersetzt.
 
 Open Library unterscheidet zwischen:
 

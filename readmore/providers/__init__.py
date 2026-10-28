@@ -23,12 +23,13 @@ def create_provider(configured="open_library"):
 class PrimaryFallbackProvider(BookProvider):
     """Use the fallback only when the primary has no plausible result."""
 
-    def __init__(self, primary_name, fallback_name=None):
+    def __init__(self, primary_name, fallback_name=None, search_callback=None):
         self.primary_name = primary_name
         self.fallback_name = fallback_name if fallback_name != primary_name else None
         self.cache_identity = f"primary_fallback:{primary_name}:{self.fallback_name or '-'}"
         self.primary = create_provider(primary_name)
         self.fallback = create_provider(self.fallback_name) if self.fallback_name else None
+        self.search_callback = search_callback
 
     def search(self, query, limit=12):
         return self._query("search", query, limit)
@@ -39,7 +40,9 @@ class PrimaryFallbackProvider(BookProvider):
     def _query(self, method, query, limit):
         primary_error = None
         try:
-            primary_results = getattr(self.primary, method)(query, limit=limit)
+            primary_results = self._provider_query(
+                self.primary_name, self.primary, method, query, limit
+            )
         except ProviderUnavailable as error:
             primary_error = error
             primary_results = []
@@ -48,7 +51,9 @@ class PrimaryFallbackProvider(BookProvider):
                 raise primary_error
             return primary_results
         try:
-            fallback_results = getattr(self.fallback, method)(query, limit=limit)
+            fallback_results = self._provider_query(
+                self.fallback_name, self.fallback, method, query, limit
+            )
         except ProviderUnavailable:
             if primary_results:
                 return primary_results
@@ -58,6 +63,11 @@ class PrimaryFallbackProvider(BookProvider):
         if _has_good_result(query, fallback_results):
             return fallback_results
         return primary_results or fallback_results
+
+    def _provider_query(self, provider_name, provider, method, query, limit):
+        if self.search_callback:
+            return self.search_callback(provider_name, provider, method, query, limit)
+        return getattr(provider, method)(query, limit=limit)
 
 
 def get_provider(configured=None):

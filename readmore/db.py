@@ -121,6 +121,20 @@ CREATE TABLE IF NOT EXISTS book_metadata_cache (
     fetched_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS catalogue_search_cache (
+    provider TEXT NOT NULL,
+    query_hash TEXT NOT NULL,
+    search_kind TEXT NOT NULL CHECK (search_kind IN ('suggest', 'search')),
+    result_limit INTEGER NOT NULL CHECK (result_limit > 0),
+    results_json TEXT NOT NULL,
+    is_empty INTEGER NOT NULL DEFAULT 0 CHECK (is_empty IN (0, 1)),
+    fetched_at INTEGER NOT NULL,
+    PRIMARY KEY (provider, query_hash, search_kind, result_limit)
+);
+
+CREATE INDEX IF NOT EXISTS idx_catalogue_search_cache_fetched
+    ON catalogue_search_cache(fetched_at);
+
 CREATE TABLE IF NOT EXISTS metadata_lookups (
     book_id INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
     provider TEXT NOT NULL,
