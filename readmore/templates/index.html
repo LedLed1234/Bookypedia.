@@ -44,8 +44,8 @@
       }
     } catch (_error) {}
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=49">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=55"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=52">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=60"></script>
 </head>
 <body>
   <header class="site-header">
@@ -105,7 +105,7 @@
         <form class="search-form" id="search-form" role="search">
           <label class="sr-only" for="search-input">Bücher suchen</label>
           <span class="search-icon" aria-hidden="true">⌕</span>
-          <input id="search-input" name="q" type="search" minlength="2" autocomplete="off" placeholder="Titel, Autor oder ISBN …" aria-controls="search-suggestions" aria-expanded="false" required>
+          <input id="search-input" name="q" type="search" minlength="2" maxlength="{{ search_max_length }}" autocomplete="off" placeholder="Titel, Autor oder ISBN …" aria-controls="search-suggestions" aria-expanded="false" required>
           <button class="button button-primary" type="submit">Suchen</button>
         </form>
         <div class="search-suggestions" id="search-suggestions" aria-label="Buchvorschläge" hidden></div>
@@ -252,10 +252,10 @@
       </div>
       <div class="manual-form-grid">
         <label class="manual-field-wide"><span>Titel <span aria-hidden="true">*</span></span>
-          <input name="title" required maxlength="300" autocomplete="off">
+          <input name="title" required maxlength="{{ book_title_max_length }}" autocomplete="off">
         </label>
         <label>Autor oder Autorin
-          <input name="authors" maxlength="500" autocomplete="off" placeholder="z. B. Ursula K. Le Guin">
+          <input name="authors" maxlength="{{ book_authors_max_length }}" autocomplete="off" placeholder="z. B. Ursula K. Le Guin">
         </label>
         <label>ISBN
           <input name="isbn" autocomplete="off" placeholder="optional, 10 oder 13 Stellen">
@@ -330,7 +330,8 @@
         <button class="text-button clear-rating" type="button">Sterne entfernen</button>
       </fieldset>
       <label>Bewertungstext
-        <textarea name="review" rows="6" maxlength="5000" placeholder="Was möchtest du über dieses Buch festhalten?"></textarea>
+        <textarea name="review" rows="6" maxlength="{{ review_max_length }}" placeholder="Was möchtest du über dieses Buch festhalten?"></textarea>
+        <small class="review-character-count" id="review-character-count">0 / {{ review_max_length }} Zeichen</small>
       </label>
       <p class="review-status-note">Beim Speichern einer Bewertung wird das Buch automatisch zu „Gelesen“ verschoben.</p>
       <div class="dialog-actions split-actions">
@@ -341,6 +342,18 @@
         </div>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="review-reader-dialog" class="dialog review-reader-dialog" aria-labelledby="review-reader-title">
+    <div class="dialog-shell review-reader-shell">
+      <div class="dialog-header">
+        <div><p class="eyebrow">Deine Bewertung</p><h2 id="review-reader-title">Bewertung</h2></div>
+        <button class="icon-button dialog-close" type="button" aria-label="Bewertung schließen">×</button>
+      </div>
+      <p class="review-reader-author" id="review-reader-author"></p>
+      <p class="review-reader-rating" id="review-reader-rating"></p>
+      <p class="review-reader-copy" id="review-reader-copy"></p>
+    </div>
   </dialog>
 
   <dialog id="collection-dialog" class="dialog collection-dialog" aria-labelledby="collection-dialog-title">

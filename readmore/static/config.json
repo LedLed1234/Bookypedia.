@@ -9,7 +9,12 @@
     "searchResultLimit": 4,
     "startView": "all",
     "mobileTextSize": 3,
-    "dateFormat": "DD-MM-YYYY"
+    "dateFormat": "DD-MM-YYYY",
+    "reviewMaxLength": 2000,
+    "searchMaxLength": 250,
+    "bookTitleMaxLength": 300,
+    "bookAuthorsMaxLength": 500,
+    "searchRateLimitPerMinute": 60
   },
   "options": {
     "themes": [

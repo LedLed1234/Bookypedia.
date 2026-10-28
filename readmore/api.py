@@ -9,6 +9,7 @@ from time import time
 
 from flask import Blueprint, current_app, g, jsonify, request
 
+from .cover_cache import attach_cached_cover_urls
 from .db import get_db
 from .metadata_cache import enqueue_metadata_lookup, metadata_lookup_status
 from .providers import KNOWN_PROVIDERS, PrimaryFallbackProvider, get_provider
@@ -167,6 +168,60 @@ def validation_error(message, status=400):
     return jsonify(error=message), status
 
 
+def review_length_error(review):
+    limit = int(current_app.config["REVIEW_MAX_LENGTH"])
+    if len(review) <= limit:
+        return None
+    formatted_limit = f"{limit:,}".replace(",", ".")
+    return validation_error(
+        f"Der Bewertungstext darf höchstens {formatted_limit} Zeichen lang sein."
+    )
+
+
+def search_rate_limit_error(db):
+    limit = int(current_app.config["SEARCH_RATE_LIMIT_PER_MINUTE"])
+    window_seconds = 60
+    now = int(time())
+    db.execute("BEGIN IMMEDIATE")
+    row = db.execute(
+        "SELECT window_started_at, request_count FROM search_rate_limits WHERE user_id = ?",
+        (g.user["id"],),
+    ).fetchone()
+    if row is None or now - int(row["window_started_at"]) >= window_seconds:
+        db.execute(
+            """
+            INSERT INTO search_rate_limits (user_id, window_started_at, request_count)
+            VALUES (?, ?, 1)
+            ON CONFLICT(user_id) DO UPDATE SET
+                window_started_at = excluded.window_started_at,
+                request_count = 1,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (g.user["id"], now),
+        )
+        db.commit()
+        return None
+    if int(row["request_count"]) >= limit:
+        retry_after = max(1, window_seconds - (now - int(row["window_started_at"])))
+        db.commit()
+        response = jsonify(
+            error="Zu viele Suchanfragen. Bitte warte kurz und versuche es erneut."
+        )
+        response.status_code = 429
+        response.headers["Retry-After"] = str(retry_after)
+        return response
+    db.execute(
+        """
+        UPDATE search_rate_limits
+        SET request_count = request_count + 1, updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ?
+        """,
+        (g.user["id"],),
+    )
+    db.commit()
+    return None
+
+
 def cached_provider_search(provider, query, suggestions=False, limit=SEARCH_RESULT_LIMIT):
     provider_name = getattr(
         provider,
@@ -276,6 +331,10 @@ def search_books():
     query = request.args.get("q", "").strip()
     if len(query) < 2:
         return validation_error("Bitte mindestens zwei Zeichen eingeben.")
+    if len(query) > current_app.config["SEARCH_MAX_LENGTH"]:
+        return validation_error(
+            f"Die Suche darf höchstens {current_app.config['SEARCH_MAX_LENGTH']} Zeichen lang sein."
+        )
     suggestions = request.args.get("suggest") == "1"
     if suggestions:
         limit = 6
@@ -291,6 +350,9 @@ def search_books():
         return validation_error("Ungültiger Hauptanbieter.")
     if fallback_provider and fallback_provider not in KNOWN_PROVIDERS:
         return validation_error("Ungültiger Fallback-Anbieter.")
+    db = get_db()
+    if error := search_rate_limit_error(db):
+        return error
     selected_primary = primary_provider or current_app.config["BOOK_PROVIDER"]
     selected_fallback = fallback_provider or current_app.config["BOOK_FALLBACK_PROVIDER"]
     try:
@@ -314,7 +376,8 @@ def search_books():
             },
         )
         return validation_error(str(error), 503)
-    return jsonify(results=prioritize_series_results(query, results, limit))
+    prepared_results = prioritize_series_results(query, results, limit)
+    return jsonify(results=attach_cached_cover_urls(db, prepared_results))
 
 
 @api.get("/books")
@@ -368,7 +431,8 @@ def list_books():
             """,
             (g.user["id"],),
         ).fetchall()
-    return jsonify(books=[serialize_book(row) for row in rows])
+    books = [serialize_book(row) for row in rows]
+    return jsonify(books=attach_cached_cover_urls(db, books))
 
 
 @api.get("/books/<int:book_id>/series")
@@ -389,7 +453,7 @@ def book_series(book_id):
         enqueue_series_lookup(db, book["provider_book_id"], book["authors"], provider=provider_name)
         wake_series_worker(current_app._get_current_object())
         status = "pending"
-    return jsonify(series=result, status=status)
+    return jsonify(series=attach_cached_cover_urls(db, result), status=status)
 
 
 @api.get("/books/<int:book_id>/metadata")
@@ -457,7 +521,7 @@ def catalogue_series():
         enqueue_series_lookup(db, provider_book_id, authors, provider=provider_name)
         wake_series_worker(current_app._get_current_object())
         status = "pending"
-    return jsonify(series=result, status=status)
+    return jsonify(series=attach_cached_cover_urls(db, result), status=status)
 
 
 @api.post("/books")
@@ -468,6 +532,15 @@ def create_book():
     status = payload.get("status", "want_to_read")
     if not title:
         return validation_error("Ein Titel ist erforderlich.")
+    if len(title) > current_app.config["BOOK_TITLE_MAX_LENGTH"]:
+        return validation_error(
+            f"Der Titel darf höchstens {current_app.config['BOOK_TITLE_MAX_LENGTH']} Zeichen lang sein."
+        )
+    if len(authors) > current_app.config["BOOK_AUTHORS_MAX_LENGTH"]:
+        return validation_error(
+            "Die Autorenangabe darf höchstens "
+            f"{current_app.config['BOOK_AUTHORS_MAX_LENGTH']} Zeichen lang sein."
+        )
     if status not in VALID_STATUSES:
         return validation_error("Ungültiger Lesestatus.")
 
@@ -477,8 +550,8 @@ def create_book():
     elif isinstance(rating, bool) or not isinstance(rating, int) or not 1 <= rating <= 5:
         return validation_error("Die Bewertung muss zwischen 1 und 5 Sternen liegen.")
     review = str(payload.get("review") or "").strip()
-    if len(review) > 5000:
-        return validation_error("Der Bewertungstext darf höchstens 5.000 Zeichen lang sein.")
+    if error := review_length_error(review):
+        return error
 
     isbn = normalize_isbn(payload.get("isbn"))
     provider_book_id = str(payload.get("provider_book_id") or "").strip() or None
@@ -506,7 +579,8 @@ def create_book():
 
     duplicate = _find_duplicate(db, g.user["id"], isbn, provider_name, provider_book_id, key)
     if duplicate:
-        return jsonify(error="Dieses Buch ist bereits in deiner Sammlung.", book=serialize_book(duplicate)), 409
+        book = attach_cached_cover_urls(db, serialize_book(duplicate))
+        return jsonify(error="Dieses Buch ist bereits in deiner Sammlung.", book=book), 409
 
     try:
         stored_status = "want_to_read" if status == "unread" else status
@@ -578,7 +652,7 @@ def create_book():
             "provider": provider_name,
         },
     )
-    return jsonify(book=serialize_book(row)), 201
+    return jsonify(book=attach_cached_cover_urls(db, serialize_book(row))), 201
 
 
 @api.patch("/books/<int:book_id>")
@@ -634,14 +708,14 @@ def update_book(book_id):
         changed_fields.append("rating")
     if "review" in payload:
         review = str(payload["review"] or "").strip()
-        if len(review) > 5000:
-            return validation_error("Der Bewertungstext darf höchstens 5.000 Zeichen lang sein.")
+        if error := review_length_error(review):
+            return error
         updates.append("review = ?")
         values.append(review)
         changed_fields.append("review")
 
     if not updates:
-        return jsonify(book=serialize_book(existing))
+        return jsonify(book=attach_cached_cover_urls(db, serialize_book(existing)))
 
     values.extend((book_id, g.user["id"]))
     cursor = db.execute(
@@ -668,7 +742,7 @@ def update_book(book_id):
             "changed_fields": ",".join(sorted(changed_fields)),
         },
     )
-    return jsonify(book=serialize_book(row))
+    return jsonify(book=attach_cached_cover_urls(db, serialize_book(row)))
 
 
 @api.delete("/books/<int:book_id>")

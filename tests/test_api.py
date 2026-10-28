@@ -1,5 +1,6 @@
 import importlib
 import sqlite3
+from pathlib import Path
 
 from readmore import create_app
 
@@ -37,6 +38,120 @@ def test_complete_book_lifecycle(client):
 
     assert client.delete(f"/api/books/{book_id}").status_code == 204
     assert client.get("/api/books").get_json()["books"] == []
+
+
+def test_provider_cover_is_downloaded_once_and_served_locally(client, monkeypatch):
+    created = client.post("/api/books", json=BOOK).get_json()["book"]
+    assert created["cover_url"] == BOOK["cover_url"]
+    assert created["cover_src"].startswith("/covers/")
+
+    image = b"\xff\xd8\xff\xe0cached-cover"
+    calls = []
+
+    class CoverResponse:
+        url = BOOK["cover_url"]
+        status_code = 200
+        headers = {"Content-Length": str(len(image))}
+
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, chunk_size):
+            calls.append(chunk_size)
+            yield image
+
+    cover_cache = importlib.import_module("readmore.cover_cache")
+    monkeypatch.setattr(cover_cache.requests, "get", lambda *_args, **_kwargs: CoverResponse())
+
+    first = client.get(created["cover_src"])
+    assert first.status_code == 200
+    assert first.data == image
+    assert first.content_type == "image/jpeg"
+    assert "immutable" in first.headers["Cache-Control"]
+    assert calls == [64 * 1024]
+
+    monkeypatch.setattr(
+        cover_cache.requests,
+        "get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("erneuter Download")),
+    )
+    second = client.get(created["cover_src"])
+    assert second.status_code == 200
+    assert second.data == image
+    assert len(list(Path(client.application.config["COVER_CACHE_DIRECTORY"]).glob("*.jpg"))) == 1
+
+
+def test_open_library_archive_redirect_is_accepted_for_cover_download(client, monkeypatch):
+    created = client.post(
+        "/api/books",
+        json={**BOOK, "cover_url": "https://covers.openlibrary.org/b/id/8407136-M.jpg"},
+    ).get_json()["book"]
+    image = b"\xff\xd8\xff\xe0archive-cover"
+
+    class RedirectResponse:
+        url = "https://covers.openlibrary.org/b/id/8407136-M.jpg"
+        status_code = 302
+        headers = {
+            "Location": "https://ia800703.us.archive.org/view_archive.php?file=cover.jpg"
+        }
+
+        def close(self):
+            return None
+
+    class ArchiveResponse:
+        url = "https://ia800703.us.archive.org/view_archive.php?file=cover.jpg"
+        status_code = 200
+        headers = {"Content-Length": str(len(image))}
+
+        def raise_for_status(self):
+            return None
+
+        def iter_content(self, chunk_size):
+            yield image
+
+    cover_cache = importlib.import_module("readmore.cover_cache")
+    responses = iter((RedirectResponse(), ArchiveResponse()))
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs["allow_redirects"]))
+        return next(responses)
+
+    monkeypatch.setattr(cover_cache.requests, "get", fake_get)
+
+    response = client.get(created["cover_src"])
+
+    assert response.status_code == 200
+    assert response.data == image
+    assert response.content_type == "image/jpeg"
+    assert calls == [
+        ("https://covers.openlibrary.org/b/id/8407136-M.jpg", False),
+        ("https://ia800703.us.archive.org/view_archive.php?file=cover.jpg", False),
+    ]
+    assert len(list(Path(client.application.config["COVER_CACHE_DIRECTORY"]).glob("*.jpg"))) == 1
+
+
+def test_review_length_limit_is_enforced_by_backend(tmp_path):
+    database = tmp_path / "review-limit.db"
+    app = create_app({
+        "TESTING": True,
+        "DATABASE": str(database),
+        "REVIEW_MAX_LENGTH": 7,
+    })
+    client = app.test_client()
+
+    rejected = client.post("/api/books", json={**BOOK, "review": "12345678"})
+    assert rejected.status_code == 400
+    assert "7 Zeichen" in rejected.get_json()["error"]
+
+    created = client.post("/api/books", json={**BOOK, "review": "1234567"})
+    assert created.status_code == 201
+    book_id = created.get_json()["book"]["id"]
+    rejected_update = client.patch(
+        f"/api/books/{book_id}", json={"review": "abcdefgh"}
+    )
+    assert rejected_update.status_code == 400
+    assert created.get_json()["book"]["review"] == "1234567"
 
 
 def test_book_keeps_catalogue_provider_for_later_requests(client):
@@ -385,6 +500,51 @@ def test_search_uses_normalized_provider_results(client, monkeypatch):
     response = client.get("/api/search?q=Dune")
     assert response.status_code == 200
     assert response.get_json()["results"] == expected
+
+
+def test_search_and_book_text_limits_are_enforced_by_backend(client, monkeypatch):
+    api_module = importlib.import_module("readmore.api")
+    client.application.config.update(
+        SEARCH_MAX_LENGTH=5,
+        BOOK_TITLE_MAX_LENGTH=5,
+        BOOK_AUTHORS_MAX_LENGTH=6,
+    )
+    monkeypatch.setattr(
+        api_module,
+        "get_provider",
+        lambda: (_ for _ in ()).throw(AssertionError("Provider darf nicht aufgerufen werden")),
+    )
+
+    search = client.get("/api/search?q=123456")
+    title = client.post("/api/books", json={"title": "123456", "authors": "Autor"})
+    authors = client.post("/api/books", json={"title": "Buch", "authors": "1234567"})
+
+    assert search.status_code == 400
+    assert "5 Zeichen" in search.get_json()["error"]
+    assert title.status_code == 400
+    assert "5 Zeichen" in title.get_json()["error"]
+    assert authors.status_code == 400
+    assert "6 Zeichen" in authors.get_json()["error"]
+
+
+def test_search_rate_limit_returns_retry_after(client, monkeypatch):
+    api_module = importlib.import_module("readmore.api")
+    api_module._SEARCH_CACHE.clear()
+    client.application.config["SEARCH_RATE_LIMIT_PER_MINUTE"] = 2
+
+    class EmptyProvider:
+        def search(self, _query, limit):
+            return []
+
+    monkeypatch.setattr(api_module, "get_provider", lambda: EmptyProvider())
+
+    assert client.get("/api/search?q=RateOne").status_code == 200
+    assert client.get("/api/search?q=RateTwo").status_code == 200
+    blocked = client.get("/api/search?q=RateThree")
+
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) >= 1
+    assert "Zu viele Suchanfragen" in blocked.get_json()["error"]
 
 
 def test_primary_provider_uses_fallback_only_without_a_good_result(monkeypatch):
@@ -1227,6 +1387,61 @@ def test_partial_google_refresh_does_not_remove_cached_series_members(client):
     assert [book["series_position"] for book in series["books"]] == ["1", "2"]
 
 
+def test_better_series_source_replaces_stale_subject_members(client):
+    cache_module = importlib.import_module("readmore.series_cache")
+    with client.application.app_context():
+        db = importlib.import_module("readmore.db").get_db()
+        cache_module.enqueue_series_lookup(
+            db, "/works/OL1W", ["Author"], provider="open_library"
+        )
+        cache_module.persist_series_result(
+            db,
+            "/works/OL1W",
+            ["Author"],
+            {
+                "name": "Test Series",
+                "source": "subject",
+                "incomplete": True,
+                "books": [
+                    {"provider_book_id": "/works/OL1W", "title": "Book One"},
+                    {"provider_book_id": "/works/STALEW", "title": "Stale Bundle"},
+                ],
+            },
+            provider="open_library",
+        )
+        cache_module.persist_series_result(
+            db,
+            "/works/OL1W",
+            ["Author"],
+            {
+                "name": "Test Series",
+                "source": "edition",
+                "incomplete": True,
+                "books": [
+                    {
+                        "provider_book_id": "/works/OL1W",
+                        "title": "Book One",
+                        "series_position": 1,
+                    },
+                    {
+                        "provider_book_id": "/works/OL2W",
+                        "title": "Book Two",
+                        "series_position": 2,
+                    },
+                ],
+            },
+            provider="open_library",
+        )
+        series, _status = cache_module.get_cached_series(
+            db, "/works/OL1W", provider="open_library"
+        )
+
+    assert [book["provider_book_id"] for book in series["books"]] == [
+        "/works/OL1W",
+        "/works/OL2W",
+    ]
+
+
 def test_manual_book_has_no_catalogue_series(client):
     created = client.post(
         "/api/books", json={"title": "Eigenes Buch", "authors": "Eine Person", "status": "reading"}
@@ -1306,6 +1521,78 @@ def test_open_library_structured_series_is_normalized(monkeypatch):
     assert series["books"][1]["cover_url"] == "https://covers.openlibrary.org/b/id/42-M.jpg"
     assert series["books"][0]["authors"] == ["Test Author"]
     assert series["books"][0]["page_count"] == 320
+
+
+def test_open_library_subject_series_uses_edition_positions(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.open_library")
+    provider = provider_module.OpenLibraryProvider()
+
+    def book(position, title, work_id):
+        return {
+            "provider": "open_library",
+            "provider_book_id": f"/works/{work_id}W",
+            "provider_edition_id": f"/books/{work_id}M",
+            "title": title,
+            "authors": ["Brandon Sanderson"],
+            "first_publish_year": 2009 + position,
+            "cover_url": f"https://covers.example/{position}.jpg",
+        }
+
+    main_books = [
+        book(1, "The Way of Kings", "OL1"),
+        book(2, "Words of Radiance", "OL2"),
+        book(3, "Oathbringer", "OL3"),
+        book(4, "Rhythm of War", "OL4"),
+        book(5, "Wind and Truth", "OL5"),
+    ]
+    edgedancer = book(2, "Edgedancer", "OL25")
+    collection = book(6, "Stormlight Archive Series 6 Books Collection Set", "OL6")
+    queries = []
+
+    monkeypatch.setattr(
+        provider,
+        "_get_json",
+        lambda path: {
+            "title": "The Way of Kings",
+            "subjects": ["series:Stormlight Archive"],
+        },
+    )
+
+    def fake_request(query, limit, **_kwargs):
+        queries.append(query)
+        if query.startswith('subject:'):
+            return [main_books[0], main_books[-1]]
+        return [edgedancer, *main_books, collection]
+
+    monkeypatch.setattr(provider, "_request", fake_request)
+    details = {
+        "/books/OL1M": {"key": "/books/OL1M", "title": "The Way of Kings (The Stormlight Archive #1)"},
+        "/books/OL2M": {"key": "/books/OL2M", "subtitle": "Book Two of the Stormlight Archive"},
+        "/books/OL3M": {"key": "/books/OL3M", "subtitle": "The Stormlight Archive Book Three"},
+        "/books/OL4M": {"key": "/books/OL4M", "subtitle": "Book Four of The Stormlight Archive"},
+        "/books/OL5M": {"key": "/books/OL5M", "subtitle": "Book Five of the Stormlight Archive"},
+        "/books/OL25M": {"key": "/books/OL25M", "subtitle": "From the Stormlight Archive"},
+        "/books/OL6M": {"key": "/books/OL6M", "title": collection["title"]},
+    }
+    monkeypatch.setattr(provider, "_edition_details", lambda books: details)
+
+    series = provider.series("/works/OL1W", ["Brandon Sanderson"])
+
+    assert series["name"] == "Stormlight Archive"
+    assert series["source"] == "edition"
+    assert series["current_position"] == 1
+    assert [book["title"] for book in series["books"]] == [
+        "The Way of Kings",
+        "Words of Radiance",
+        "Oathbringer",
+        "Rhythm of War",
+        "Wind and Truth",
+    ]
+    assert [book["series_position"] for book in series["books"]] == [1, 2, 3, 4, 5]
+    assert queries == [
+        'subject:"series:Stormlight Archive"',
+        '"Stormlight Archive" author:"Brandon Sanderson"',
+    ]
 
 
 def test_series_cache_survives_app_restart(tmp_path):
@@ -1477,6 +1764,42 @@ def test_cached_partial_google_series_is_requeued_after_matching_upgrade(tmp_pat
     assert dict(lookup) == {"status": "pending", "next_attempt_at": 0}
 
 
+def test_cached_subject_series_is_requeued_for_edition_upgrade(tmp_path):
+    database = tmp_path / "open-library-series-upgrade.db"
+    first_app = create_app({"TESTING": True, "DATABASE": str(database)})
+    with first_app.app_context():
+        db = importlib.import_module("readmore.db").get_db()
+        cursor = db.execute(
+            """
+            INSERT INTO series (
+                provider, identity_key, name, source, incomplete,
+                metadata_version, fetched_at
+            ) VALUES ('open_library', 'name:stormlight-archive',
+                      'Stormlight Archive', 'subject', 1, 5, 1)
+            """
+        )
+        db.execute(
+            """
+            INSERT INTO series_lookups (
+                provider, provider_book_id, authors, status, series_id,
+                next_attempt_at
+            ) VALUES ('open_library', '/works/OL15358691W', 'Brandon Sanderson',
+                      'ready', ?, 9999999999)
+            """,
+            (cursor.lastrowid,),
+        )
+        db.commit()
+
+    restarted_app = create_app({"TESTING": True, "DATABASE": str(database)})
+    with restarted_app.app_context():
+        lookup = importlib.import_module("readmore.db").get_db().execute(
+            "SELECT status, next_attempt_at FROM series_lookups WHERE provider_book_id = ?",
+            ("/works/OL15358691W",),
+        ).fetchone()
+
+    assert dict(lookup) == {"status": "pending", "next_attempt_at": 0}
+
+
 def test_frontend_exposes_all_appearance_palettes(client):
     html = client.get("/").get_data(as_text=True)
     assert 'aria-label="Epiloguehouse Startseite"' in html
@@ -1516,6 +1839,13 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="settings-fallback-provider"' in html
     assert 'id="settings-start-view"' in html
     assert 'id="settings-mobile-text-size"' in html
+    assert 'id="review-reader-dialog"' in html
+    assert 'id="review-reader-copy"' in html
+    assert 'id="review-character-count"' in html
+    assert 'name="review" rows="6" maxlength="2000"' in html
+    assert 'id="search-input" name="q" type="search" minlength="2" maxlength="250"' in html
+    assert 'name="title" required maxlength="300"' in html
+    assert 'name="authors" maxlength="500"' in html
     assert 'class="settings-version"' in html
     assert client.application.config["BUILD_VERSION"] in html
     assert 'data-filter="unread"' in html
@@ -1552,6 +1882,11 @@ def test_frontend_exposes_all_appearance_palettes(client):
         "startView": "all",
         "mobileTextSize": 3,
         "dateFormat": "DD-MM-YYYY",
+        "reviewMaxLength": 2000,
+        "searchMaxLength": 250,
+        "bookTitleMaxLength": 300,
+        "bookAuthorsMaxLength": 500,
+        "searchRateLimitPerMinute": 60,
     }
     assert config["options"]["searchResultLimits"] == [4, 6, 8, 12]
     assert [option["value"] for option in config["options"]["dateFormats"]] == [

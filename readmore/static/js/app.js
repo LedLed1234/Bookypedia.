@@ -89,6 +89,7 @@ const state = {
   fallbackProvider: "google_books",
   readingHistoryExpanded: false,
   dateFormat: "DD-MM-YYYY",
+  reviewMaxLength: 1000,
 };
 const grid = document.querySelector("#book-grid");
 const emptyState = document.querySelector("#empty-state");
@@ -100,6 +101,9 @@ const searchInput = document.querySelector("#search-input");
 const searchSuggestions = document.querySelector("#search-suggestions");
 const manualDialog = document.querySelector("#manual-dialog");
 const reviewDialog = document.querySelector("#review-dialog");
+const reviewReaderDialog = document.querySelector("#review-reader-dialog");
+const reviewTextarea = document.querySelector('#review-form textarea[name="review"]');
+const reviewCharacterCount = document.querySelector("#review-character-count");
 const bookDialog = document.querySelector("#book-dialog");
 const collectionDialog = document.querySelector("#collection-dialog");
 const collectionBookList = document.querySelector("#collection-book-list");
@@ -187,6 +191,7 @@ const FALLBACK_APP_CONFIG = {
     startView: "all",
     mobileTextSize: 3,
     dateFormat: "DD-MM-YYYY",
+    reviewMaxLength: 1000,
   },
   options: {
     themes: [
@@ -259,6 +264,12 @@ async function loadAppConfig() {
   populateSelect(settingsMobileTextSizeSelect, appConfig.options.mobileTextSizes);
   populateSelect(settingsPrimaryProviderSelect, appConfig.options.bookProviders);
   populateSelect(settingsFallbackProviderSelect, appConfig.options.bookProviders);
+  const configuredReviewMaxLength = Number(appConfig.defaults.reviewMaxLength);
+  state.reviewMaxLength = Number.isInteger(configuredReviewMaxLength) && configuredReviewMaxLength > 0
+    ? configuredReviewMaxLength
+    : 1000;
+  reviewTextarea.maxLength = state.reviewMaxLength;
+  updateReviewCharacterCount();
 }
 
 function setAppearanceMenu(open) {
@@ -429,10 +440,11 @@ function statusSelect(current) {
 function coverElement(book) {
   const wrap = document.createElement("div");
   wrap.className = "book-cover-wrap";
-  if (book.cover_url) {
+  const coverSource = book.cover_src || book.cover_url;
+  if (coverSource) {
     const image = document.createElement("img");
     image.className = "book-cover";
-    image.src = book.cover_url;
+    image.src = coverSource;
     image.alt = `Cover von ${book.title}`;
     image.loading = "lazy";
     image.addEventListener("error", () => {
@@ -583,6 +595,27 @@ function createBookInfoButton(book, insideBookDialog = false) {
   return button;
 }
 
+function setRemoveButtonAppearance(button) {
+  button.classList.add("remove-book-button");
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("focusable", "false");
+  const paths = [
+    "M3 6h18",
+    "M8 6V4h8v2",
+    "M19 6l-1 14H6L5 6",
+    "M10 10v6",
+    "M14 10v6",
+  ];
+  paths.forEach((pathData) => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pathData);
+    icon.append(path);
+  });
+  button.replaceChildren(icon);
+}
+
 function normalizeSearch(value) {
   return String(value || "")
     .normalize("NFKD")
@@ -694,7 +727,7 @@ function mergeKnownBookMetadata(book, knownBook) {
     "original_title", "original_authors", "first_publish_year", "description", "subjects",
   ];
   const editionFields = [
-    "provider_edition_id", "isbn", "cover_url", "language", "page_count", "publisher",
+    "provider_edition_id", "isbn", "cover_url", "cover_src", "language", "page_count", "publisher",
     "publish_date", "physical_format", "subtitle",
   ];
   const fields = booksDescribeSameEdition(book, knownBook)
@@ -715,7 +748,7 @@ function mergeLoadedBookMetadata(book, metadata) {
   const loadedEdition = loaded.provider_edition_id || "";
   if (currentEdition && loadedEdition && currentEdition !== loadedEdition) {
     [
-      "provider_edition_id", "isbn", "cover_url", "language", "page_count", "publisher",
+      "provider_edition_id", "isbn", "cover_url", "cover_src", "language", "page_count", "publisher",
       "publish_date", "physical_format", "subtitle",
     ].forEach((field) => delete loaded[field]);
   }
@@ -817,7 +850,8 @@ function combinedSuggestions(query, remoteResults = []) {
 }
 
 function suggestionCover(book) {
-  if (!book.cover_url) {
+  const coverSource = book.cover_src || book.cover_url;
+  if (!coverSource) {
     const placeholder = document.createElement("span");
     placeholder.className = "suggestion-cover suggestion-placeholder";
     placeholder.textContent = bookMonogram(book.title);
@@ -826,7 +860,7 @@ function suggestionCover(book) {
   }
   const image = document.createElement("img");
   image.className = "suggestion-cover";
-  image.src = book.cover_url;
+  image.src = coverSource;
   image.alt = "";
   image.loading = "lazy";
   image.addEventListener("error", () => {
@@ -1058,12 +1092,12 @@ function seriesCollectionCard(seriesKey, books) {
   cover.tabIndex = 0;
   cover.setAttribute("role", "button");
   cover.setAttribute("aria-label", `${series.name} öffnen`);
-  const coveredBooks = books.filter((book) => book.cover_url).slice(0, 3);
+  const coveredBooks = books.filter((book) => book.cover_src || book.cover_url).slice(0, 3);
   if (coveredBooks.length) {
     coveredBooks.forEach((book) => {
       const image = document.createElement("img");
       image.className = "series-stack-cover";
-      image.src = book.cover_url;
+      image.src = book.cover_src || book.cover_url;
       image.alt = "";
       image.loading = "lazy";
       image.addEventListener("error", () => image.remove(), { once: true });
@@ -1218,7 +1252,7 @@ function collectionBookRow(book) {
   });
 
   const review = document.createElement("button");
-  review.className = "collection-review-button";
+  review.className = "collection-review-button review-book-button";
   if (book.rating) review.classList.add("rated");
   review.type = "button";
   review.textContent = book.rating ? `★ ${book.rating}` : "☆";
@@ -1232,7 +1266,7 @@ function collectionBookRow(book) {
   const remove = document.createElement("button");
   remove.className = "icon-button series-book-delete";
   remove.type = "button";
-  remove.textContent = "×";
+  setRemoveButtonAppearance(remove);
   remove.title = "Aus Sammlung entfernen";
   remove.setAttribute("aria-label", `${book.title} aus der Sammlung entfernen`);
   remove.addEventListener("click", () => {
@@ -1284,7 +1318,7 @@ function collectionOtherBookRow(book) {
   add.addEventListener("click", () => addSeriesBook(displayBook, select.value, add));
 
   const review = document.createElement("button");
-  review.className = "collection-review-button";
+  review.className = "collection-review-button review-book-button";
   review.type = "button";
   review.textContent = "☆";
   review.title = "Direkt bewerten";
@@ -1351,9 +1385,13 @@ function libraryCard(book) {
     body.append(rating);
   }
   if (book.review) {
-    const review = document.createElement("p");
+    const review = document.createElement("button");
     review.className = "review-excerpt";
+    review.type = "button";
     review.textContent = `„${book.review}“`;
+    review.title = "Vollständige Bewertung anzeigen";
+    review.setAttribute("aria-label", `Vollständige Bewertung zu ${book.title} anzeigen`);
+    review.addEventListener("click", () => openReviewReader(book));
     body.append(review);
   }
 
@@ -1375,7 +1413,7 @@ function libraryCard(book) {
   const row = document.createElement("div");
   row.className = "card-action-row";
   const reviewButton = document.createElement("button");
-  reviewButton.className = "button button-secondary";
+  reviewButton.className = "button button-secondary review-book-button";
   reviewButton.type = "button";
   reviewButton.textContent = book.rating || book.review ? "Bewertung bearbeiten" : "Bewerten";
   if (book.rating) {
@@ -1390,7 +1428,7 @@ function libraryCard(book) {
   deleteButton.type = "button";
   deleteButton.setAttribute("aria-label", `${book.title} entfernen`);
   deleteButton.title = "Aus Sammlung entfernen";
-  deleteButton.textContent = "×";
+  setRemoveButtonAppearance(deleteButton);
   deleteButton.addEventListener("click", () => deleteBook(book, deleteButton));
   row.append(reviewButton, deleteButton);
   actions.append(select, row);
@@ -1762,7 +1800,12 @@ function renderSeriesDetails() {
     toggle.type = "button";
     toggle.setAttribute("aria-expanded", String(state.detailSeriesExpanded));
     const volumeLabel = otherBooks.length === 1 ? "1 weiteren Band" : `${otherBooks.length} weitere Bände`;
-    toggle.innerHTML = `<span>${volumeLabel} ${state.detailSeriesExpanded ? "ausblenden" : "anzeigen"}</span><span aria-hidden="true">${state.detailSeriesExpanded ? "⌃" : "⌄"}</span>`;
+    const toggleLabel = document.createElement("span");
+    toggleLabel.textContent = `${volumeLabel} ${state.detailSeriesExpanded ? "ausblenden" : "anzeigen"}`;
+    const toggleChevron = document.createElement("span");
+    toggleChevron.setAttribute("aria-hidden", "true");
+    toggleChevron.textContent = state.detailSeriesExpanded ? "⌃" : "⌄";
+    toggle.append(toggleLabel, toggleChevron);
     const otherList = document.createElement("div");
     otherList.className = "series-list series-other-list";
     otherList.hidden = !state.detailSeriesExpanded;
@@ -1833,7 +1876,7 @@ function seriesBookActions(book) {
     add.setAttribute("aria-label", `${book.title} zur Sammlung hinzufügen`);
     add.addEventListener("click", () => addSeriesBook(book, select.value, add));
     const review = document.createElement("button");
-    review.className = "collection-review-button series-review-button";
+    review.className = "collection-review-button series-review-button review-book-button";
     review.type = "button";
     review.textContent = "☆";
     review.title = "Direkt bewerten";
@@ -1862,7 +1905,7 @@ function seriesBookActions(book) {
     }
   });
   const review = document.createElement("button");
-  review.className = "collection-review-button series-review-button";
+  review.className = "collection-review-button series-review-button review-book-button";
   if (saved.rating) review.classList.add("rated");
   review.type = "button";
   review.textContent = saved.rating ? `★ ${saved.rating}` : "☆";
@@ -1872,7 +1915,7 @@ function seriesBookActions(book) {
   const remove = document.createElement("button");
   remove.className = "icon-button series-book-delete";
   remove.type = "button";
-  remove.textContent = "×";
+  setRemoveButtonAppearance(remove);
   remove.title = "Aus Sammlung entfernen";
   remove.setAttribute("aria-label", `${saved.title} aus der Sammlung entfernen`);
   remove.addEventListener("click", () => {
@@ -1906,7 +1949,11 @@ function renderSearchResults() {
   if (!state.searchResults.length) {
     const message = document.createElement("div");
     message.className = "empty-state";
-    message.innerHTML = "<h3>Keine passenden Bücher gefunden</h3><p>Die Buchkataloge liefern manchmal kurzzeitig keine Treffer. Versuche es erneut oder lege das Buch selbst an.</p>";
+    const heading = document.createElement("h3");
+    heading.textContent = "Keine passenden Bücher gefunden";
+    const copy = document.createElement("p");
+    copy.textContent = "Die Buchkataloge liefern manchmal kurzzeitig keine Treffer. Versuche es erneut oder lege das Buch selbst an.";
+    message.append(heading, copy);
     const actions = document.createElement("div");
     actions.className = "empty-state-actions";
     const retry = document.createElement("button");
@@ -2067,10 +2114,31 @@ function openReview(book) {
   form.reset();
   form.elements.book_id.value = saved?.id || "";
   form.elements.review.value = candidate.review || "";
+  updateReviewCharacterCount();
   if (candidate.rating) form.querySelector(`[name="rating"][value="${candidate.rating}"]`).checked = true;
   document.querySelector("#review-book-title").textContent = candidate.title;
   document.querySelector("#delete-review").hidden = !saved;
   reviewDialog.showModal();
+}
+
+function updateReviewCharacterCount() {
+  const length = reviewTextarea.value.length;
+  reviewCharacterCount.textContent = `${length.toLocaleString("de-DE")} / ${state.reviewMaxLength.toLocaleString("de-DE")} Zeichen`;
+  reviewCharacterCount.classList.toggle("limit-near", length >= state.reviewMaxLength * 0.9);
+}
+
+function openReviewReader(book) {
+  document.querySelector("#review-reader-title").textContent = book.title;
+  document.querySelector("#review-reader-author").textContent = authorText(book);
+  const rating = document.querySelector("#review-reader-rating");
+  const ratingValue = Number(book.rating);
+  const validRating = Number.isInteger(ratingValue) && ratingValue >= 1 && ratingValue <= 5
+    ? ratingValue
+    : null;
+  rating.textContent = validRating ? `${"★".repeat(validRating)} ${validRating}/5` : "";
+  rating.hidden = !validRating;
+  document.querySelector("#review-reader-copy").textContent = book.review || "";
+  reviewReaderDialog.showModal();
 }
 
 function updateCounts(visibleCount) {
@@ -2126,6 +2194,10 @@ function canonicalSearchQuery(query) {
 
 async function executeSearch(query) {
   if (query.length < 2) return;
+  if (query.length > searchInput.maxLength) {
+    showToast(`Die Suche darf höchstens ${searchInput.maxLength} Zeichen lang sein.`, true);
+    return;
+  }
   const hydrationGeneration = ++searchHydrationGeneration;
   const providerQuery = canonicalSearchQuery(query);
   state.lastSearchQuery = providerQuery;
@@ -2136,7 +2208,10 @@ async function executeSearch(query) {
   button.disabled = true;
   button.textContent = "Suche …";
   searchPanel.hidden = false;
-  searchResults.innerHTML = '<div class="loading-state">Buchkatalog wird durchsucht …</div>';
+  const loadingState = document.createElement("div");
+  loadingState.className = "loading-state";
+  loadingState.textContent = "Buchkatalog wird durchsucht …";
+  searchResults.replaceChildren(loadingState);
   searchPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   try {
     const results = await cachedBookSearch(providerQuery);
@@ -2231,6 +2306,10 @@ document.querySelector("#review-form").addEventListener("submit", async (event) 
   const submit = form.querySelector('[type="submit"]');
   const rating = data.get("rating") ? Number(data.get("rating")) : null;
   const review = String(data.get("review") || "").trim();
+  if (review.length > state.reviewMaxLength) {
+    showToast(`Der Bewertungstext darf höchstens ${state.reviewMaxLength.toLocaleString("de-DE")} Zeichen lang sein.`, true);
+    return;
+  }
   const saved = data.get("book_id") ? findCollectionBook(state.reviewCandidate) : null;
   const hasReview = Boolean(rating || review);
   if (!saved && !hasReview) {
@@ -2279,6 +2358,8 @@ document.querySelector("#delete-review").addEventListener("click", async () => {
     showToast(`Nicht gelöscht: ${error.message}`, true);
   } finally { button.disabled = false; }
 });
+
+reviewTextarea.addEventListener("input", updateReviewCharacterCount);
 
 let dialogLockedScrollY = 0;
 

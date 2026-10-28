@@ -13,7 +13,7 @@ PROVIDER_NAME = "open_library"
 NO_SERIES_RECHECK_SECONDS = 30 * 24 * 60 * 60
 STALE_LOCK_SECONDS = 5 * 60
 MAX_RETRY_DELAY_SECONDS = 6 * 60 * 60
-SERIES_METADATA_VERSION = 5
+SERIES_METADATA_VERSION = 6
 
 
 def _connect(database_path):
@@ -246,6 +246,10 @@ def persist_series_result(db, provider_book_id, authors, result, provider=PROVID
         return
 
     identity = _series_identity(result)
+    existing_series = db.execute(
+        "SELECT id, source FROM series WHERE provider = ? AND identity_key = ?",
+        (provider, identity),
+    ).fetchone()
     db.execute(
         """
         INSERT INTO series (
@@ -277,7 +281,11 @@ def persist_series_result(db, provider_book_id, authors, result, provider=PROVID
         (provider, identity),
     ).fetchone()["id"]
     result_books = list(result.get("books") or [])
-    if result.get("incomplete"):
+    if (
+        result.get("incomplete")
+        and existing_series is not None
+        and existing_series["source"] == str(result.get("source") or "unknown")
+    ):
         result_books = _merge_cached_incomplete_members(db, series_id, result_books)
     db.execute("DELETE FROM series_members WHERE series_id = ?", (series_id,))
 

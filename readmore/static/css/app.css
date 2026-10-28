@@ -307,14 +307,19 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .series-collection-badge { position: absolute; top: 12px; left: 12px; z-index: 6; padding: 5px 8px; color: var(--accent-ink); background: var(--accent); border-radius: 99px; box-shadow: 0 4px 12px rgba(0,0,0,.24); font-size: .67rem; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
 .rating-display { margin: 0 0 10px; color: var(--gold); letter-spacing: .06em; }
 .rating-display span { margin-left: 5px; color: var(--muted); font-size: .72rem; letter-spacing: 0; }
-.review-excerpt { display: -webkit-box; margin: 0 0 13px; color: var(--muted); font-size: .8rem; font-style: italic; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.review-excerpt { width: 100%; display: -webkit-box; margin: 0 0 13px; padding: 0; overflow: hidden; color: var(--muted); background: transparent; border: 0; font-size: .8rem; font-style: italic; line-height: 1.55; text-align: left; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.review-excerpt:hover, .review-excerpt:focus-visible { color: var(--gold); }
 .card-actions { display: grid; gap: 8px; margin-top: auto; }
 .status-select, label input, label select, label textarea { width: 100%; padding: 10px 11px; color: var(--text); background: var(--surface-tint); border: 1px solid var(--theme-border); border-radius: 9px; }
 .status-select { background: var(--soft-tint); font-size: .8rem; font-weight: 700; }
 .card-action-row { display: flex; gap: 7px; }
 .card-action-row .button { flex: 1; min-width: 0; padding-inline: 9px; font-size: .78rem; }
 .icon-button { width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; color: var(--muted); background: transparent; border: 1px solid var(--border); border-radius: 9px; font-size: 1.25rem; }
-.icon-button:hover { color: var(--danger); border-color: rgba(239,136,126,.48); }
+.icon-button:hover { color: var(--text); border-color: var(--accent); }
+.remove-book-button { color: color-mix(in srgb, var(--danger) 72%, var(--muted)); background: color-mix(in srgb, var(--danger) 5%, transparent); border-color: color-mix(in srgb, var(--danger) 32%, var(--border)); }
+.remove-book-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.remove-book-button:hover, .remove-book-button:focus-visible { color: var(--danger); background: color-mix(in srgb, var(--danger) 13%, transparent); border-color: var(--danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 15%, transparent); }
+.remove-book-button:active { background: color-mix(in srgb, var(--danger) 20%, transparent); }
 .search-card { display: grid; grid-template-columns: 112px minmax(0, 1fr); }
 .search-card .book-cover-wrap { min-height: 210px; aspect-ratio: auto; padding: 12px; border-right: 1px solid var(--theme-border); }
 .search-card .book-cover { width: 100%; height: 100%; padding: 0; }
@@ -450,6 +455,10 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .collection-other-book-row { border-style: dashed; }
 .collection-review-button { min-width: 44px; height: 42px; padding: 0 10px; color: var(--muted); background: var(--surface-tint); border: 1px solid var(--theme-border); border-radius: 9px; font-weight: 900; }
 .collection-review-button:hover, .collection-review-button:focus-visible, .collection-review-button.rated { color: var(--gold); border-color: var(--gold); }
+.review-book-button { color: color-mix(in srgb, var(--gold) 76%, var(--muted)); background: color-mix(in srgb, var(--gold) 6%, var(--surface-tint)); border-color: color-mix(in srgb, var(--gold) 34%, var(--theme-border)); }
+.review-book-button:hover, .review-book-button:focus-visible { color: var(--gold); background: color-mix(in srgb, var(--gold) 14%, var(--surface-tint)); border-color: var(--gold); box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 15%, transparent); }
+.review-book-button.rated { color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, var(--surface-tint)); border-color: color-mix(in srgb, var(--gold) 65%, var(--theme-border)); }
+.review-book-button:active { background: color-mix(in srgb, var(--gold) 21%, var(--surface-tint)); }
 .series-section { display: grid; gap: 13px; }
 .series-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .series-heading-row h3 { margin: 0; font-size: 1.12rem; }
@@ -488,6 +497,13 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .stars label:hover, .stars label:hover ~ label, .stars input:checked ~ label { color: var(--gold); }
 .clear-rating { width: max-content; margin-top: 2px; font-size: .76rem; }
 .review-status-note { margin: -5px 0 0; padding: 10px 12px; color: var(--muted); background: var(--soft-tint); border-radius: 9px; font-size: .76rem; }
+.review-character-count { justify-self: end; color: var(--muted); font-size: .68rem; font-weight: 600; }
+.review-character-count.limit-near { color: var(--danger); }
+.review-reader-dialog { width: min(620px, calc(100% - 28px)); overflow-y: auto; border: 1px solid var(--theme-border); }
+.review-reader-shell { gap: 12px; }
+.review-reader-author { margin: -5px 0 0; color: var(--muted); font-size: .86rem; }
+.review-reader-rating { width: max-content; margin: 3px 0 0; color: var(--gold); font-size: 1rem; font-weight: 850; letter-spacing: .04em; }
+.review-reader-copy { margin: 3px 0 0; padding: 16px; color: var(--text); background: var(--soft-tint); border: 1px solid var(--theme-border); border-radius: 11px; font-size: .9rem; line-height: 1.75; white-space: pre-wrap; }
 
 .toast { position: fixed; left: 50%; bottom: 22px; z-index: 30; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); padding: 12px 16px; color: var(--text); background: var(--background); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); text-align: center; font-size: .82rem; font-weight: 700; }
 .toast.error { background: var(--danger); }
@@ -524,7 +540,8 @@ html.dialog-scroll-locked { overflow: hidden; }
 .platform-mobile .book-detail-trigger:hover { background: var(--soft-tint); }
 .platform-mobile .book-title-link:hover { color: inherit; text-decoration: none; }
 .platform-mobile .icon-button:hover { color: var(--muted); border-color: var(--border); }
-.platform-mobile .collection-review-button:not(.rated):hover { color: var(--muted); border-color: var(--theme-border); }
+.platform-mobile .remove-book-button:hover { color: color-mix(in srgb, var(--danger) 72%, var(--muted)); background: color-mix(in srgb, var(--danger) 5%, transparent); border-color: color-mix(in srgb, var(--danger) 32%, var(--border)); box-shadow: none; }
+.platform-mobile .review-book-button:hover { color: color-mix(in srgb, var(--gold) 76%, var(--muted)); background: color-mix(in srgb, var(--gold) 6%, var(--surface-tint)); border-color: color-mix(in srgb, var(--gold) 34%, var(--theme-border)); box-shadow: none; }
 .platform-mobile .book-card-info:hover,
 .platform-mobile .series-info-button:hover,
 .platform-mobile .book-dialog-info-button:hover { color: var(--muted); border-color: var(--border); }

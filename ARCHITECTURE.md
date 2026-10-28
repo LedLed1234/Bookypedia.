@@ -70,6 +70,7 @@ Wichtige Tabellen:
 | `metadata_lookups` | Status und Wiederholungen der Metadatenabfragen |
 | `book_metadata_cache` | gecachte Ausgabedetails der Buchanbieter |
 | `catalogue_search_cache` | persistente, anbieterbezogene Suchergebnisse |
+| `cover_cache` | externe Cover-Quellen und lokale Dateipfade |
 
 SQLite-Migrationen werden beim Anwendungsstart in `readmore/db.py` ausgeführt.
 Historische Zeitpunkte werden dabei nicht erfunden.
@@ -123,6 +124,13 @@ Jeder Katalogtreffer und jedes gespeicherte Buch trägt zusätzlich den Namen
 seines Anbieters. Dadurch werden Google-Books-IDs bei späteren Metadaten- und
 Hintergrundabfragen nicht versehentlich an Open Library geschickt.
 
+Cover von Open Library und Google Books werden beim ersten Abruf unter
+`/data/covers` gespeichert. Die Tabelle `cover_cache` ordnet die externe Quelle
+dem lokalen Dateipfad zu. Weitere Browser und Geräte laden dasselbe Cover danach
+direkt von Epiloguehouse; das persistente Docker-Volume übersteht Image-Neubauten.
+Open-Library-Weiterleitungen auf dessen Archive unter `*.archive.org` sind
+zugelassen; andere Redirect-Ziele werden zum Schutz vor SSRF verworfen.
+
 Google Books liefert bei einem Teil der Datensätze `volumeInfo.seriesInfo` mit
 `seriesId` und Bandnummer. Der Provider verwendet diese Struktur bevorzugt und
 sucht weitere Ausgaben anhand von Reihentitel und Autor. Fehlt `seriesInfo`,
@@ -164,6 +172,10 @@ erfordern einen neuen Android-Build.
 ## Einstellungen
 
 `readmore/static/config.json` enthält Standardwerte und verfügbare Optionen.
+`defaults.reviewMaxLength` begrenzt Bewertungstexte in Oberfläche und Backend.
+Die weiteren Längen- und Suchgrenzen liegen ebenfalls unter `defaults`. Das
+Backend begrenzt Suchanfragen zusätzlich pro Konto und Minute; die Zähler
+liegen in `search_rate_limits` und überstehen mehrere Gunicorn-Threads.
 Gerätespezifische Einstellungen wie Theme, Startansicht und mobile Textgröße
 werden im Browser gespeichert.
 

@@ -8,6 +8,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .api import api
 from .auth import create_user, init_auth, login_required
+from .cover_cache import serve_cached_cover
 from .db import get_db, init_app as init_database
 from .logging_config import configure_logging, register_request_logging
 from .metadata_cache import enqueue_existing_metadata
@@ -44,7 +45,27 @@ def _catalogue_settings():
     unknown = {name for name in (primary, fallback) if name not in KNOWN_PROVIDERS}
     if unknown:
         raise RuntimeError(f"Unbekannter Buchanbieter in config.json: {', '.join(sorted(unknown))}")
-    return mode, primary, fallback
+    defaults = payload.get("defaults") or {}
+
+    def integer_default(name, default, minimum, maximum):
+        try:
+            value = int(defaults.get(name, default))
+        except (TypeError, ValueError) as error:
+            raise RuntimeError(f"defaults.{name} muss eine ganze Zahl sein.") from error
+        if not minimum <= value <= maximum:
+            raise RuntimeError(
+                f"defaults.{name} muss zwischen {minimum} und {maximum} liegen."
+            )
+        return value
+
+    limits = {
+        "review": integer_default("reviewMaxLength", 1000, 1, 50000),
+        "search": integer_default("searchMaxLength", 250, 2, 1000),
+        "title": integer_default("bookTitleMaxLength", 300, 1, 5000),
+        "authors": integer_default("bookAuthorsMaxLength", 500, 1, 5000),
+        "search_rate": integer_default("searchRateLimitPerMinute", 60, 1, 10000),
+    }
+    return mode, primary, fallback, limits
 
 
 def create_app(test_config=None):
@@ -52,14 +73,26 @@ def create_app(test_config=None):
     configured_secret = os.environ.get("SECRET_KEY")
     if app_environment == "production" and not configured_secret:
         raise RuntimeError("SECRET_KEY muss in der Produktionsumgebung gesetzt sein.")
-    provider_mode, primary_provider, fallback_provider = _catalogue_settings()
+    provider_mode, primary_provider, fallback_provider, limits = _catalogue_settings()
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_mapping(
         SECRET_KEY=configured_secret or "bookypedia-local-development-only",
         DATABASE=os.environ.get("DATABASE_PATH", os.path.join(app.instance_path, "readmore.db")),
+        COVER_CACHE_DIRECTORY=os.environ.get(
+            "COVER_CACHE_DIRECTORY",
+            os.path.join(
+                os.path.dirname(os.environ.get("DATABASE_PATH", os.path.join(app.instance_path, "readmore.db"))),
+                "covers",
+            ),
+        ),
         BOOK_PROVIDER=primary_provider,
         BOOK_FALLBACK_PROVIDER=fallback_provider,
         BOOK_PROVIDER_MODE=provider_mode,
+        REVIEW_MAX_LENGTH=limits["review"],
+        SEARCH_MAX_LENGTH=limits["search"],
+        BOOK_TITLE_MAX_LENGTH=limits["title"],
+        BOOK_AUTHORS_MAX_LENGTH=limits["authors"],
+        SEARCH_RATE_LIMIT_PER_MINUTE=limits["search_rate"],
         SERIES_WORKER_ENABLED=os.environ.get("SERIES_WORKER_ENABLED", "1") != "0",
         SERIES_WORKER_POLL_INTERVAL=1.0,
         LOG_LEVEL=os.environ.get("LOG_LEVEL", "INFO"),
@@ -82,6 +115,10 @@ def create_app(test_config=None):
 
     if test_config:
         app.config.update(test_config)
+        if "DATABASE" in test_config and "COVER_CACHE_DIRECTORY" not in test_config:
+            app.config["COVER_CACHE_DIRECTORY"] = os.path.join(
+                os.path.dirname(app.config["DATABASE"]), "covers"
+            )
     if app.config.get("TESTING") and not (test_config and "SERIES_WORKER_ENABLED" in test_config):
         app.config["SERIES_WORKER_ENABLED"] = False
     if app.config.get("TESTING") and not (test_config and "TEST_AUTO_LOGIN" in test_config):
@@ -119,7 +156,14 @@ def create_app(test_config=None):
     def index():
         if g.user["password_change_required"]:
             return redirect(url_for("auth.change_password"))
-        return render_template("index.html", build_version=app.config["BUILD_VERSION"])
+        return render_template(
+            "index.html",
+            build_version=app.config["BUILD_VERSION"],
+            review_max_length=app.config["REVIEW_MAX_LENGTH"],
+            search_max_length=app.config["SEARCH_MAX_LENGTH"],
+            book_title_max_length=app.config["BOOK_TITLE_MAX_LENGTH"],
+            book_authors_max_length=app.config["BOOK_AUTHORS_MAX_LENGTH"],
+        )
 
     @app.get("/health")
     def health():
@@ -131,6 +175,13 @@ def create_app(test_config=None):
         response.headers["Cache-Control"] = "no-cache"
         response.headers["Service-Worker-Allowed"] = "/"
         return response
+
+    @app.get("/covers/<string:cache_key>")
+    @login_required
+    def cover_asset(cache_key):
+        if len(cache_key) != 64 or any(character not in "0123456789abcdef" for character in cache_key):
+            return "Cover nicht gefunden.", 404
+        return serve_cached_cover(get_db(), cache_key)
 
     @app.after_request
     def add_security_headers(response):

@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS series (
     name TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT 'unknown',
     incomplete INTEGER NOT NULL DEFAULT 0,
-    metadata_version INTEGER NOT NULL DEFAULT 5,
+    metadata_version INTEGER NOT NULL DEFAULT 6,
     fetched_at INTEGER NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(provider, identity_key)
@@ -132,6 +132,15 @@ CREATE TABLE IF NOT EXISTS catalogue_search_cache (
     PRIMARY KEY (provider, query_hash, search_kind, result_limit)
 );
 
+CREATE TABLE IF NOT EXISTS cover_cache (
+    cache_key TEXT PRIMARY KEY,
+    source_url TEXT NOT NULL UNIQUE,
+    filename TEXT,
+    content_type TEXT,
+    fetched_at INTEGER,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_catalogue_search_cache_fetched
     ON catalogue_search_cache(fetched_at);
 
@@ -155,6 +164,13 @@ CREATE TABLE IF NOT EXISTS login_attempts (
     failures INTEGER NOT NULL DEFAULT 0,
     window_started_at INTEGER NOT NULL,
     blocked_until INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS search_rate_limits (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    window_started_at INTEGER NOT NULL,
+    request_count INTEGER NOT NULL DEFAULT 0 CHECK (request_count >= 0),
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -305,6 +321,21 @@ def init_db():
           AND series_id IN (
               SELECT id FROM series
               WHERE provider = 'google_books' AND metadata_version < 5
+          )
+        """
+    )
+    # Version 6 wertet bei Open-Library-Schlagwortreihen zusätzlich die
+    # Reihenangaben der konkreten Ausgaben aus.
+    db.execute(
+        """
+        UPDATE series_lookups
+        SET status = 'pending', next_attempt_at = 0, locked_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE status = 'ready'
+          AND series_id IN (
+              SELECT id FROM series
+              WHERE provider = 'open_library' AND source = 'subject'
+                AND metadata_version < 6
           )
         """
     )

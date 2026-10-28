@@ -9,6 +9,7 @@ from .base import BookProvider, ProviderUnavailable
 class OpenLibraryProvider(BookProvider):
     SEARCH_URL = "https://openlibrary.org/search.json"
     API_URL = "https://openlibrary.org"
+    BOOKS_API_URL = "https://openlibrary.org/api/books"
     REQUEST_HEADERS = {"User-Agent": "Bookypedia/1.0 (personal local reading manager)"}
     SEARCH_TIMEOUTS = ((3.05, 8), (2, 4))
 
@@ -193,7 +194,41 @@ class OpenLibraryProvider(BookProvider):
         if not subject_name:
             return None
         escaped_name = subject_name.replace("\\", "\\\\").replace('"', '\\"')
-        books = self._request(f'subject:"series:{escaped_name}"', limit)
+        subject_books = self._request(f'subject:"series:{escaped_name}"', limit)
+        broad_query = f'"{escaped_name}"'
+        if authors:
+            escaped_author = str(authors[0]).replace("\\", "\\\\").replace('"', '\\"')
+            broad_query += f' author:"{escaped_author}"'
+        broad_books = self._request(broad_query, min(40, max(limit * 2, 24)))
+        candidates = _deduplicate_books([*broad_books, *subject_books])
+        edition_details = self._edition_details(candidates)
+        positioned = []
+        for book in candidates:
+            if _is_series_collection_title(book.get("title")):
+                continue
+            position = _series_position_from_edition(
+                edition_details.get(book.get("provider_edition_id"), {}),
+                subject_name,
+            )
+            if position is None:
+                continue
+            positioned.append({**book, "series_position": position})
+        books = _best_positioned_series_books(positioned, work_key, limit)
+        if len(books) >= 2:
+            current = next(
+                (book for book in books if book.get("provider_book_id") == work_key),
+                None,
+            )
+            return {
+                "name": subject_name,
+                "provider_series_id": None,
+                "current_position": current.get("series_position") if current else None,
+                "source": "edition",
+                "incomplete": True,
+                "books": books,
+            }
+
+        books = subject_books
         books.sort(key=lambda book: (book.get("first_publish_year") is None, book.get("first_publish_year") or 0))
         for book in books:
             book["series_position"] = None
@@ -205,6 +240,36 @@ class OpenLibraryProvider(BookProvider):
             "incomplete": True,
             "books": books,
         }
+
+    def _edition_details(self, books):
+        edition_ids = []
+        for book in books:
+            edition_id = _normalize_edition_key(book.get("provider_edition_id"))
+            if edition_id and edition_id not in edition_ids:
+                edition_ids.append(edition_id)
+        if not edition_ids:
+            return {}
+        bibkeys = ",".join(f"OLID:{edition_id.rsplit('/', 1)[-1]}" for edition_id in edition_ids)
+        try:
+            response = requests.get(
+                self.BOOKS_API_URL,
+                params={"bibkeys": bibkeys, "jscmd": "details", "format": "json"},
+                timeout=(3.05, 10),
+                headers=self.REQUEST_HEADERS,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("Open Library hat keine gültige JSON-Antwort geliefert.")
+        except (requests.RequestException, ValueError) as error:
+            raise ProviderUnavailable("Open Library ist derzeit nicht erreichbar.") from error
+        details = {}
+        for value in payload.values():
+            raw = value.get("details") if isinstance(value, dict) else None
+            edition_id = _normalize_edition_key(raw.get("key")) if isinstance(raw, dict) else None
+            if edition_id:
+                details[edition_id] = raw
+        return details
 
     def _get_json(self, path):
         try:
@@ -456,6 +521,96 @@ def _series_subject(subjects):
             if name:
                 return name
     return None
+
+
+_POSITION_WORDS = {
+    "one": 1, "first": 1, "eins": 1, "erste": 1, "erster": 1,
+    "two": 2, "second": 2, "zwei": 2, "zweite": 2, "zweiter": 2,
+    "three": 3, "third": 3, "drei": 3, "dritte": 3, "dritter": 3,
+    "four": 4, "fourth": 4, "vier": 4, "vierte": 4, "vierter": 4,
+    "five": 5, "fifth": 5, "fünf": 5, "fuenf": 5, "fünfte": 5,
+    "six": 6, "sixth": 6, "sechs": 6, "sechste": 6,
+    "seven": 7, "seventh": 7, "sieben": 7, "siebte": 7,
+    "eight": 8, "eighth": 8, "acht": 8, "achte": 8,
+    "nine": 9, "ninth": 9, "neun": 9, "neunte": 9,
+    "ten": 10, "tenth": 10, "zehn": 10, "zehnte": 10,
+}
+_POSITION_MARKERS = {"book", "volume", "vol", "band", "teil", "tome"}
+
+
+def _position_token(value):
+    token = str(value or "").casefold().strip(".#,;:()[]")
+    numeric = re.fullmatch(r"(\d+(?:\.\d+)?)(?:st|nd|rd|th)?", token)
+    if numeric:
+        number = float(numeric.group(1))
+        return int(number) if number.is_integer() else number
+    return _POSITION_WORDS.get(token)
+
+
+def _series_position_from_edition(details, series_name):
+    if not isinstance(details, dict):
+        return None
+    values = []
+    for field in ("series", "subtitle", "full_title", "title", "notes"):
+        value = details.get(field)
+        if isinstance(value, dict):
+            value = value.get("value")
+        values.extend(value if isinstance(value, list) else [value])
+    series_tokens = _simple_normalize(series_name).split()
+    if not series_tokens:
+        return None
+    for value in values:
+        tokens = _simple_normalize(value).split()
+        if not tokens:
+            continue
+        for start in range(0, len(tokens) - len(series_tokens) + 1):
+            if tokens[start:start + len(series_tokens)] != series_tokens:
+                continue
+            before = tokens[max(0, start - 5):start]
+            after = tokens[start + len(series_tokens):start + len(series_tokens) + 5]
+            for index, token in enumerate(after[:4]):
+                position = _position_token(token)
+                if position is not None and (
+                    index == 0 or any(marker in after[:index] for marker in _POSITION_MARKERS)
+                ):
+                    return position
+            for index, token in enumerate(before):
+                position = _position_token(token)
+                if position is not None and any(
+                    marker in before[:index] for marker in _POSITION_MARKERS
+                ):
+                    return position
+    return None
+
+
+def _is_series_collection_title(title):
+    normalized = _simple_normalize(title)
+    return any(
+        phrase in normalized
+        for phrase in ("collection set", "books collection", "boxed set", "box set", "bundle")
+    )
+
+
+def _best_positioned_series_books(books, current_work_key, limit):
+    by_position = {}
+    for book in books:
+        position = book.get("series_position")
+        if position is None:
+            continue
+        title = _simple_normalize(book.get("title"))
+        score = (
+            100 if book.get("provider_book_id") == current_work_key else 0,
+            -20 if re.search(r"\b(?:part|volume|vol)\b", title) else 0,
+            4 if book.get("cover_url") else 0,
+            2 if book.get("page_count") else 0,
+            1 if book.get("isbn") else 0,
+        )
+        previous = by_position.get(str(position))
+        if previous is None or score > previous[0]:
+            by_position[str(position)] = (score, book)
+    selected = [entry[1] for entry in by_position.values()]
+    selected.sort(key=lambda book: (float(book["series_position"]), _simple_normalize(book["title"])))
+    return selected[:limit]
 
 
 def _normalize_series_seeds(entries, authors, limit):
