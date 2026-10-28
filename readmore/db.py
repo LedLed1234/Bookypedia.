@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS series (
     name TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT 'unknown',
     incomplete INTEGER NOT NULL DEFAULT 0,
-    metadata_version INTEGER NOT NULL DEFAULT 3,
+    metadata_version INTEGER NOT NULL DEFAULT 4,
     fetched_at INTEGER NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(provider, identity_key)
@@ -293,13 +293,25 @@ def init_db():
           AND series_id IN (SELECT id FROM series WHERE metadata_version < 3)
         """
     )
+    db.execute(
+        """
+        UPDATE series_lookups
+        SET status = 'pending', next_attempt_at = 0, locked_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE status = 'ready'
+          AND series_id IN (
+              SELECT id FROM series
+              WHERE provider = 'google_books' AND metadata_version < 4
+          )
+        """
+    )
 
     # Google Books wurde zunächst ohne Reihenunterstützung angebunden. Bereits
     # als "keine Reihe" gecachte Google-Bücher werden nach diesem Upgrade genau
     # einmal neu geprüft; PRAGMA user_version verhindert Wiederholungen bei
     # jedem App-Start.
     schema_version = db.execute("PRAGMA user_version").fetchone()[0]
-    if schema_version < 1:
+    if schema_version < 2:
         db.execute(
             """
             UPDATE series_lookups
@@ -308,7 +320,7 @@ def init_db():
             WHERE provider = 'google_books' AND status = 'no_series'
             """
         )
-        db.execute("PRAGMA user_version = 1")
+        db.execute("PRAGMA user_version = 2")
 
     # Alte Datensätze können aus Versionen stammen, die spätere Meilensteine
     # beim Zurückstufen behalten haben. Die aktuelle Statushierarchie wird

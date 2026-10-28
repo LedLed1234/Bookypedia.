@@ -46,12 +46,17 @@ class GoogleBooksProvider(BookProvider):
         query = f'intitle:"{_escape_query_value(series_name)}"'
         if current_authors:
             query += f' inauthor:"{_escape_query_value(current_authors[0])}"'
-        candidates = self._search_volumes(query, min(40, max(limit * 2, 12)))
-        if len(candidates) < 2 and current_authors:
-            candidates = self._search_volumes(
-                f'intitle:"{_escape_query_value(series_name)}"',
-                min(40, max(limit * 2, 12)),
-            )
+        request_limit = min(40, max(limit * 2, 12))
+        # Autorennamen sind bei Google Books nicht konsistent normalisiert
+        # (z. B. Young-do Lee / Yeong do I). Deshalb ergänzt eine breitere
+        # Phrasensuche die präzise Titel+Autor-Suche immer. Erst die lokale
+        # Reihenprüfung entscheidet, welche Treffer wirklich dazugehören.
+        candidates = [
+            *self._search_volumes(query, request_limit),
+            *self._search_volumes(
+                f'"{_escape_query_value(series_name)}"', request_limit
+            ),
+        ]
 
         matching = []
         for book in [current, *candidates]:
@@ -64,7 +69,10 @@ class GoogleBooksProvider(BookProvider):
             )
             same_inferred_series = (
                 _normalize_text(book.get("series_name")) == _normalize_text(series_name)
-                and _authors_match(current_authors, book.get("authors") or [])
+                and (
+                    book.get("series_position") is not None
+                    or _authors_match(current_authors, book.get("authors") or [])
+                )
             )
             if same_volume or same_series_id or same_inferred_series:
                 matching.append(book)

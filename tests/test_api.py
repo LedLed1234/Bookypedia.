@@ -536,14 +536,23 @@ def test_google_books_infers_tearbird_series_from_titles(monkeypatch):
         }
         for position, title in enumerate(titles, 1)
     ]
+    # Google schreibt denselben Autor je nach Ausgabe unterschiedlich. Die
+    # enge Titel+Autor-Suche findet dadurch nur einen Teil der Reihe; die
+    # ergänzende Phrasensuche muss die fehlenden Bände liefern.
+    volumes[1]["volumeInfo"]["authors"] = ["Yeong do I"]
+    volumes[3]["volumeInfo"]["authors"] = ["Yeong-do Lee"]
     provider = provider_module.GoogleBooksProvider("key")
-    monkeypatch.setattr(
-        provider,
-        "_get_json",
-        lambda url, params=None: volumes[0] if url.endswith("/tearbird-1") else {
-            "items": volumes
-        },
-    )
+    search_queries = []
+
+    def fake_get(url, params=None):
+        if url.endswith("/tearbird-1"):
+            return volumes[0]
+        search_queries.append(params["q"])
+        if "inauthor:" in params["q"]:
+            return {"items": [volumes[0], volumes[2]]}
+        return {"items": volumes}
+
+    monkeypatch.setattr(provider, "_get_json", fake_get)
 
     series = provider.series("tearbird-1", ["Young-do Lee"])
 
@@ -551,6 +560,9 @@ def test_google_books_infers_tearbird_series_from_titles(monkeypatch):
     assert series["provider_series_id"] is None
     assert series["source"] == "google_title"
     assert [book["series_position"] for book in series["books"]] == [1, 2, 3, 4]
+    assert len(search_queries) == 2
+    assert "inauthor:" in search_queries[0]
+    assert "inauthor:" not in search_queries[1]
 
 
 def test_catalogue_metadata_uses_provider_from_result(client, monkeypatch):
@@ -1366,7 +1378,41 @@ def test_old_google_no_series_result_is_requeued_once_after_upgrade(tmp_path):
         schema_version = db.execute("PRAGMA user_version").fetchone()[0]
 
     assert dict(lookup) == {"status": "pending", "next_attempt_at": 0}
-    assert schema_version == 1
+    assert schema_version == 2
+
+
+def test_cached_partial_google_series_is_requeued_after_matching_upgrade(tmp_path):
+    database = tmp_path / "google-series-matching-upgrade.db"
+    first_app = create_app({"TESTING": True, "DATABASE": str(database)})
+    with first_app.app_context():
+        db = importlib.import_module("readmore.db").get_db()
+        cursor = db.execute(
+            """
+            INSERT INTO series (
+                provider, identity_key, name, source, incomplete,
+                metadata_version, fetched_at
+            ) VALUES ('google_books', 'name:tearbird', 'Tearbird',
+                      'google_title', 1, 3, 1)
+            """
+        )
+        db.execute(
+            """
+            INSERT INTO series_lookups (
+                provider, provider_book_id, authors, status, series_id,
+                next_attempt_at
+            ) VALUES ('google_books', 'tearbird-1', 'Young-do Lee', 'ready', ?, 9999999999)
+            """,
+            (cursor.lastrowid,),
+        )
+        db.commit()
+
+    restarted_app = create_app({"TESTING": True, "DATABASE": str(database)})
+    with restarted_app.app_context():
+        lookup = importlib.import_module("readmore.db").get_db().execute(
+            "SELECT status, next_attempt_at FROM series_lookups WHERE provider_book_id = 'tearbird-1'"
+        ).fetchone()
+
+    assert dict(lookup) == {"status": "pending", "next_attempt_at": 0}
 
 
 def test_frontend_exposes_all_appearance_palettes(client):

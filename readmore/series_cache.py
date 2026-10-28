@@ -13,6 +13,7 @@ PROVIDER_NAME = "open_library"
 NO_SERIES_RECHECK_SECONDS = 30 * 24 * 60 * 60
 STALE_LOCK_SECONDS = 5 * 60
 MAX_RETRY_DELAY_SECONDS = 6 * 60 * 60
+SERIES_METADATA_VERSION = 4
 
 
 def _connect(database_path):
@@ -184,7 +185,7 @@ def persist_series_result(db, provider_book_id, authors, result, provider=PROVID
         INSERT INTO series (
             provider, identity_key, provider_series_id, name, source,
             incomplete, metadata_version, fetched_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 3, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider, identity_key) DO UPDATE SET
             provider_series_id = excluded.provider_series_id,
             name = excluded.name,
@@ -201,6 +202,7 @@ def persist_series_result(db, provider_book_id, authors, result, provider=PROVID
             str(result.get("name") or "Unbenannte Reihe"),
             str(result.get("source") or "unknown"),
             int(bool(result.get("incomplete"))),
+            SERIES_METADATA_VERSION,
             now,
         ),
     )

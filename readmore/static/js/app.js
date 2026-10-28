@@ -606,7 +606,11 @@ function mergeLoadedBookMetadata(book, metadata) {
 
   Object.assign(book, loaded);
   const resolvedEdition = book?.provider_edition_id || loadedEdition;
-  let searchResultChanged = false;
+  // Die Detailabfrage ist ausgabengenauer als Googles Suchliste. Wenn das
+  // angeklickte Objekt selbst aus den Suchergebnissen stammt, wurde es bisher
+  // zwar aktualisiert, seine bereits gerenderte Karte aber nicht. Dadurch
+  // standen z. B. 335 Seiten in der Vorschau und 496 Seiten im Infodialog.
+  let searchResultChanged = state.searchResults.includes(book);
   [...state.books, ...state.searchResults, ...state.suggestions, ...state.remoteSuggestions]
     .forEach((candidate) => {
       if (!candidate || candidate === book) return;
@@ -1612,7 +1616,7 @@ function renderSeriesDetails() {
   }
 
   if (series.source === "google_title") {
-    seriesNote.textContent = "Google Books hat diese Reihe aus Titel und Bandnummer abgeleitet. Die Liste kann unvollständig sein.";
+    seriesNote.textContent = "";
   } else if (series.source === "google_structured") {
     seriesNote.textContent = "Google Books liefert die Reihenzuordnung strukturiert; einzelne Ausgaben können trotzdem fehlen.";
   } else if (series.source === "subject") {
