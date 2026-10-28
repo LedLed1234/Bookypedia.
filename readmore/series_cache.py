@@ -13,7 +13,7 @@ PROVIDER_NAME = "open_library"
 NO_SERIES_RECHECK_SECONDS = 30 * 24 * 60 * 60
 STALE_LOCK_SECONDS = 5 * 60
 MAX_RETRY_DELAY_SECONDS = 6 * 60 * 60
-SERIES_METADATA_VERSION = 4
+SERIES_METADATA_VERSION = 5
 
 
 def _connect(database_path):
@@ -37,6 +37,72 @@ def _series_identity(series):
     name = unicodedata.normalize("NFKD", str(series.get("name") or ""))
     name = "".join(character for character in name if not unicodedata.combining(character))
     return f"name:{re.sub(r'[^a-z0-9]+', '-', name.casefold()).strip('-')}"
+
+
+def _position_key(value):
+    if value in (None, ""):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value).strip().casefold()
+    return str(int(number)) if number.is_integer() else str(number)
+
+
+def _series_book_sort_key(book):
+    try:
+        position = float(book.get("series_position"))
+    except (TypeError, ValueError):
+        position = float("inf")
+    return (
+        position,
+        book.get("first_publish_year") is None,
+        book.get("first_publish_year") or 0,
+        str(book.get("title") or "").casefold(),
+    )
+
+
+def _merge_cached_incomplete_members(db, series_id, books):
+    """Do not let a partial provider response delete previously found volumes."""
+    merged = list(books)
+    seen_ids = {
+        str(book.get("provider_book_id") or "").strip()
+        for book in merged
+        if book.get("provider_book_id")
+    }
+    seen_positions = {
+        key for key in (_position_key(book.get("series_position")) for book in merged) if key
+    }
+    cached = db.execute(
+        "SELECT * FROM series_members WHERE series_id = ? ORDER BY sort_order",
+        (series_id,),
+    ).fetchall()
+    for member in cached:
+        member_id = str(member["provider_book_id"] or "").strip()
+        position_key = _position_key(member["position"])
+        if member_id in seen_ids or (position_key and position_key in seen_positions):
+            continue
+        merged.append(
+            {
+                "provider_book_id": member_id,
+                "provider_edition_id": member["provider_edition_id"],
+                "title": member["title"],
+                "authors": [
+                    author.strip() for author in member["authors"].split(",") if author.strip()
+                ],
+                "isbn": member["isbn"],
+                "cover_url": member["cover_url"],
+                "first_publish_year": member["first_publish_year"],
+                "publish_date": member["publish_date"],
+                "page_count": member["page_count"],
+                "series_position": member["position"],
+            }
+        )
+        seen_ids.add(member_id)
+        if position_key:
+            seen_positions.add(position_key)
+    merged.sort(key=_series_book_sort_key)
+    return merged
 
 
 def enqueue_series_lookup(db, provider_book_id, authors=None, provider=PROVIDER_NAME):
@@ -210,11 +276,14 @@ def persist_series_result(db, provider_book_id, authors, result, provider=PROVID
         "SELECT id FROM series WHERE provider = ? AND identity_key = ?",
         (provider, identity),
     ).fetchone()["id"]
+    result_books = list(result.get("books") or [])
+    if result.get("incomplete"):
+        result_books = _merge_cached_incomplete_members(db, series_id, result_books)
     db.execute("DELETE FROM series_members WHERE series_id = ?", (series_id,))
 
     members = []
     seen = set()
-    for sort_order, book in enumerate(result.get("books") or []):
+    for sort_order, book in enumerate(result_books):
         member_id = str(book.get("provider_book_id") or "").strip()
         title = str(book.get("title") or "").strip()
         if not member_id or not title or member_id in seen:

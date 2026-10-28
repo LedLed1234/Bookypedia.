@@ -49,12 +49,12 @@ class GoogleBooksProvider(BookProvider):
         request_limit = min(40, max(limit * 2, 12))
         # Autorennamen sind bei Google Books nicht konsistent normalisiert
         # (z. B. Young-do Lee / Yeong do I). Deshalb ergänzt eine breitere
-        # Phrasensuche die präzise Titel+Autor-Suche immer. Erst die lokale
+        # Volltextsuche die präzise Titel+Autor-Suche immer. Erst die lokale
         # Reihenprüfung entscheidet, welche Treffer wirklich dazugehören.
         candidates = [
             *self._search_volumes(query, request_limit),
             *self._search_volumes(
-                f'"{_escape_query_value(series_name)}"', request_limit
+                _escape_query_value(series_name), request_limit
             ),
         ]
 

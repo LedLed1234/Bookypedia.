@@ -8,7 +8,8 @@
     "theme": "blue-white",
     "searchResultLimit": 4,
     "startView": "all",
-    "mobileTextSize": 3
+    "mobileTextSize": 3,
+    "dateFormat": "DD-MM-YYYY"
   },
   "options": {
     "themes": [
@@ -20,6 +21,12 @@
       { "value": "light", "label": "Light" }
     ],
     "searchResultLimits": [4, 6, 8, 12],
+    "dateFormats": [
+      { "value": "DD-MM-YYYY", "label": "DD-MM-YYYY" },
+      { "value": "DD.MM.YYYY", "label": "DD.MM.YYYY" },
+      { "value": "YYYY-MM-DD", "label": "YYYY-MM-DD" },
+      { "value": "MM/DD/YYYY", "label": "MM/DD/YYYY" }
+    ],
     "bookProviders": [
       { "value": "open_library", "label": "Open Library" },
       { "value": "google_books", "label": "Google Books" }

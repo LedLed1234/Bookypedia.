@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS series (
     name TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT 'unknown',
     incomplete INTEGER NOT NULL DEFAULT 0,
-    metadata_version INTEGER NOT NULL DEFAULT 4,
+    metadata_version INTEGER NOT NULL DEFAULT 5,
     fetched_at INTEGER NOT NULL,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(provider, identity_key)
@@ -293,6 +293,9 @@ def init_db():
           AND series_id IN (SELECT id FROM series WHERE metadata_version < 3)
         """
     )
+    # Version 5 nutzt für Google-Reihen zusätzlich die breite Volltextsuche.
+    # Bereits als vollständig markierte Teillisten werden damit einmal neu
+    # geladen; gefundene alte Bände bleiben währenddessen erhalten.
     db.execute(
         """
         UPDATE series_lookups
@@ -301,7 +304,7 @@ def init_db():
         WHERE status = 'ready'
           AND series_id IN (
               SELECT id FROM series
-              WHERE provider = 'google_books' AND metadata_version < 4
+              WHERE provider = 'google_books' AND metadata_version < 5
           )
         """
     )

@@ -56,10 +56,6 @@ const STATUS_HISTORY = [
   { status: "read", field: "read_at", label: "Fertig gelesen" },
 ];
 const titleCollator = new Intl.Collator("de", { sensitivity: "base", numeric: true });
-const dateFormatter = new Intl.DateTimeFormat("de-DE", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
 
 const state = {
   books: [],
@@ -92,6 +88,7 @@ const state = {
   primaryProvider: "open_library",
   fallbackProvider: "google_books",
   readingHistoryExpanded: false,
+  dateFormat: "DD-MM-YYYY",
 };
 const grid = document.querySelector("#book-grid");
 const emptyState = document.querySelector("#empty-state");
@@ -140,6 +137,7 @@ const themeOptions = document.querySelectorAll("[data-theme-option]");
 const settingsDialog = document.querySelector("#settings-dialog");
 const settingsThemeSelect = document.querySelector("#settings-theme");
 const settingsSearchLimitSelect = document.querySelector("#settings-search-limit");
+const settingsDateFormatSelect = document.querySelector("#settings-date-format");
 const settingsPrimaryProviderSelect = document.querySelector("#settings-primary-provider");
 const settingsFallbackProviderSelect = document.querySelector("#settings-fallback-provider");
 const settingsStartViewSelect = document.querySelector("#settings-start-view");
@@ -160,6 +158,7 @@ let pendingDelete;
 let seriesPollTimer;
 let groupingPollTimer;
 let metadataPollTimer;
+let searchHydrationGeneration = 0;
 const searchCache = new Map();
 const SEARCH_CACHE_TTL = 10 * 60 * 1000;
 // Etwas längeres Debouncing verhindert, dass langsames Tippen auf Mobilgeräten
@@ -182,7 +181,13 @@ const FALLBACK_APP_CONFIG = {
     primaryProvider: "open_library",
     fallbackProvider: "google_books",
   },
-  defaults: { theme: "blue-white", searchResultLimit: 4, startView: "all", mobileTextSize: 3 },
+  defaults: {
+    theme: "blue-white",
+    searchResultLimit: 4,
+    startView: "all",
+    mobileTextSize: 3,
+    dateFormat: "DD-MM-YYYY",
+  },
   options: {
     themes: [
       { value: "red", label: "Red" },
@@ -193,6 +198,12 @@ const FALLBACK_APP_CONFIG = {
       { value: "light", label: "Light" },
     ],
     searchResultLimits: [4, 6, 8, 12],
+    dateFormats: [
+      { value: "DD-MM-YYYY", label: "DD-MM-YYYY" },
+      { value: "DD.MM.YYYY", label: "DD.MM.YYYY" },
+      { value: "YYYY-MM-DD", label: "YYYY-MM-DD" },
+      { value: "MM/DD/YYYY", label: "MM/DD/YYYY" },
+    ],
     bookProviders: [
       { value: "open_library", label: "Open Library" },
       { value: "google_books", label: "Google Books" },
@@ -243,6 +254,7 @@ async function loadAppConfig() {
     settingsSearchLimitSelect,
     appConfig.options.searchResultLimits.map((value) => ({ value, label: `${value} Bücher` })),
   );
+  populateSelect(settingsDateFormatSelect, appConfig.options.dateFormats);
   populateSelect(settingsStartViewSelect, appConfig.options.startViews);
   populateSelect(settingsMobileTextSizeSelect, appConfig.options.mobileTextSizes);
   populateSelect(settingsPrimaryProviderSelect, appConfig.options.bookProviders);
@@ -329,6 +341,26 @@ function applyMobileTextSize(value, persist = true) {
   settingsMobileTextSizeSelect.value = String(size);
   if (persist) {
     try { localStorage.setItem("bookypedia-mobile-text-size", String(size)); } catch (_error) {}
+  }
+}
+
+function applyDateFormat(value, persist = true) {
+  const configuredFormats = new Set(
+    appConfig.options.dateFormats.map(({ value: format }) => String(format)),
+  );
+  const defaultFormat = appConfig.defaults.dateFormat || "DD-MM-YYYY";
+  state.dateFormat = configuredFormats.has(value) ? value : defaultFormat;
+  settingsDateFormatSelect.value = state.dateFormat;
+  if (persist) {
+    try { localStorage.setItem("bookypedia-date-format", state.dateFormat); } catch (_error) {}
+  }
+  if (!loadingState.hidden) renderLibrary();
+  if (!searchPanel.hidden) renderSearchResults();
+  if (!searchSuggestions.hidden && state.suggestionQuery) renderSuggestions(state.suggestionQuery);
+  if (state.seriesLoaded) renderSeriesDetails();
+  if (bookDialog.open) {
+    renderReadingHistory(findCollectionBook(state.detailBook) || state.detailBook);
+    renderBookInfo();
   }
 }
 
@@ -443,12 +475,96 @@ function pageCountText(book, fallback = "") {
   return Number.isInteger(pages) && pages > 0 ? `${pages.toLocaleString("de-DE")} Seiten` : fallback;
 }
 
+const DATE_MONTH_NAMES = {
+  january: 1, januar: 1,
+  february: 2, februar: 2,
+  march: 3, märz: 3, maerz: 3,
+  april: 4,
+  may: 5, mai: 5,
+  june: 6, juni: 6,
+  july: 7, juli: 7,
+  august: 8,
+  september: 9,
+  october: 10, oktober: 10,
+  november: 11,
+  december: 12, dezember: 12,
+};
+
+function validPublicationDateParts(year, month = null, day = null) {
+  if (!Number.isInteger(year) || year < 1) return null;
+  if (month == null) return { year, month: null, day: null };
+  if (!Number.isInteger(month) || month < 1 || month > 12) return null;
+  if (day == null) return { year, month, day: null };
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (!Number.isInteger(day) || day < 1 || day > daysInMonth) return null;
+  return { year, month, day };
+}
+
+function publicationDateParts(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  let match = text.match(/^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/);
+  if (match) {
+    return validPublicationDateParts(
+      Number(match[1]),
+      match[2] ? Number(match[2]) : null,
+      match[3] ? Number(match[3]) : null,
+    );
+  }
+  match = text.match(/^(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})$/);
+  if (match) {
+    const first = Number(match[1]);
+    const second = Number(match[2]);
+    const [day, month] = second > 12 && first <= 12 ? [second, first] : [first, second];
+    return validPublicationDateParts(Number(match[3]), month, day);
+  }
+  const normalized = text.toLocaleLowerCase("de").replace(/,/g, " ");
+  const monthEntry = Object.entries(DATE_MONTH_NAMES)
+    .find(([name]) => new RegExp(`(^|\\s)${name}(\\s|$)`, "u").test(normalized));
+  const yearMatch = normalized.match(/\b(\d{4})\b/);
+  if (monthEntry && yearMatch) {
+    const withoutYear = normalized.replace(yearMatch[0], " ");
+    const dayMatch = withoutYear.match(/\b([12]?\d|3[01])\b/);
+    return validPublicationDateParts(
+      Number(yearMatch[1]),
+      monthEntry[1],
+      dayMatch ? Number(dayMatch[1]) : null,
+    );
+  }
+  return null;
+}
+
+function formatDateParts({ year, month = null, day = null }) {
+  const yyyy = String(year).padStart(4, "0");
+  if (!month) return yyyy;
+  const mm = String(month).padStart(2, "0");
+  if (!day) {
+    if (state.dateFormat === "YYYY-MM-DD") return `${yyyy}-${mm}`;
+    if (state.dateFormat === "MM/DD/YYYY") return `${mm}/${yyyy}`;
+    return state.dateFormat === "DD.MM.YYYY" ? `${mm}.${yyyy}` : `${mm}-${yyyy}`;
+  }
+  const dd = String(day).padStart(2, "0");
+  if (state.dateFormat === "DD.MM.YYYY") return `${dd}.${mm}.${yyyy}`;
+  if (state.dateFormat === "YYYY-MM-DD") return `${yyyy}-${mm}-${dd}`;
+  if (state.dateFormat === "MM/DD/YYYY") return `${mm}/${dd}/${yyyy}`;
+  return `${dd}-${mm}-${yyyy}`;
+}
+
+function formatPublicationDate(value) {
+  const parts = publicationDateParts(value);
+  return parts ? formatDateParts(parts) : String(value || "").trim();
+}
+
 function publicationDateText(book, withLabel = false) {
   const editionDate = String(book?.publish_date || "").trim();
-  if (editionDate) return withLabel ? `Erschienen ${editionDate}` : editionDate;
+  if (editionDate) {
+    const formatted = formatPublicationDate(editionDate);
+    return withLabel ? `Erschienen ${formatted}` : formatted;
+  }
   const firstYear = book?.first_publish_year;
   if (!firstYear) return "";
-  return withLabel ? `Erstmals erschienen ${firstYear}` : String(firstYear);
+  const formatted = formatPublicationDate(firstYear);
+  return withLabel ? `Erstmals erschienen ${formatted}` : formatted;
 }
 
 function createBookInfoButton(book, insideBookDialog = false) {
@@ -624,6 +740,43 @@ function mergeLoadedBookMetadata(book, metadata) {
     });
   if (searchResultChanged && !searchPanel.hidden) renderSearchResults();
   return { ...book };
+}
+
+function catalogueMetadataUrl(book) {
+  return `/api/metadata?provider=${encodeURIComponent(book.provider || "open_library")}`
+    + `&provider_book_id=${encodeURIComponent(book.provider_book_id)}`
+    + (book.provider_edition_id
+      ? `&provider_edition_id=${encodeURIComponent(book.provider_edition_id)}`
+      : "");
+}
+
+async function hydrateSearchResultMetadata(books, generation) {
+  const queue = [];
+  const seen = new Set();
+  for (const book of books) {
+    if (!book?.provider_book_id) continue;
+    const identity = metadataIdentityForBook(book);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    queue.push(book);
+  }
+  async function worker() {
+    while (queue.length && generation === searchHydrationGeneration) {
+      const book = queue.shift();
+      try {
+        const payload = await api(catalogueMetadataUrl(book));
+        if (generation !== searchHydrationGeneration) return;
+        book._metadataHydrationPending = false;
+        mergeLoadedBookMetadata(book, payload.metadata || {});
+      } catch (_error) {
+        // Die Suchergebnisse bleiben mit ihren Katalogdaten nutzbar. Ein
+        // einzelner fehlgeschlagener Detailabruf darf die Suche nicht leeren.
+        book._metadataHydrationPending = false;
+        if (!searchPanel.hidden) renderSearchResults();
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(3, queue.length) }, () => worker()));
 }
 
 function enrichKnownBookMetadata(book) {
@@ -1283,7 +1436,7 @@ function renderBookInfo() {
   const fields = [
     ["ISBN", metadata.isbn],
     ["Verlag", metadata.publisher],
-    ["Erscheinungsdatum", metadata.publish_date || metadata.first_publish_year],
+    ["Erscheinungsdatum", formatPublicationDate(metadata.publish_date || metadata.first_publish_year)],
     ["Seitenzahl", pageCountText(metadata)],
     ["Sprache", displayLanguage(metadata.language)],
     ["Format", metadata.physical_format],
@@ -1523,7 +1676,14 @@ function setReadingHistoryExpanded(expanded) {
 function formatReadingDate(value) {
   if (!value) return "Nicht erfasst";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Nicht erfasst" : dateFormatter.format(date);
+  if (Number.isNaN(date.getTime())) return "Nicht erfasst";
+  const formattedDate = formatDateParts({
+    year: date.getFullYear(),
+    month: date.getMonth() + 1,
+    day: date.getDate(),
+  });
+  const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return `${formattedDate}, ${time}`;
 }
 
 function applySeriesPayload(payload, seriesUrl, detailIdentity, attempt = 0) {
@@ -1537,9 +1697,9 @@ function applySeriesPayload(payload, seriesUrl, detailIdentity, attempt = 0) {
     return;
   }
 
-  seriesHeading.textContent = "Reihe wird im Hintergrund geladen";
+  if (!payload.series) seriesHeading.textContent = "Reihe wird im Hintergrund geladen";
   seriesNote.textContent = status === "retry"
-    ? "Open Library war kurz nicht erreichbar. Ein neuer Versuch läuft automatisch."
+    ? "Die Reihendaten konnten gerade nicht aktualisiert werden. Vorhandene Angaben bleiben sichtbar; ein neuer Versuch läuft automatisch."
     : "Du kannst die App weiter benutzen. Diese Ansicht aktualisiert sich automatisch.";
   scheduleSeriesPoll(seriesUrl, detailIdentity, attempt + 1);
 }
@@ -1800,10 +1960,12 @@ function searchCard(book) {
   author.className = "book-author";
   author.textContent = authorText(book);
   meta.append(title, author);
-  const publicationDetails = [
-    publicationDateText(book, true),
-    pageCountText(book, "Seitenzahl unbekannt"),
-  ].filter(Boolean);
+  const publicationDetails = book._metadataHydrationPending
+    ? ["Buchdaten werden geprüft …"]
+    : [
+      publicationDateText(book, true),
+      pageCountText(book, "Seitenzahl unbekannt"),
+    ].filter(Boolean);
   if (publicationDetails.length) {
     const year = document.createElement("p");
     year.className = "book-year";
@@ -1964,6 +2126,7 @@ function canonicalSearchQuery(query) {
 
 async function executeSearch(query) {
   if (query.length < 2) return;
+  const hydrationGeneration = ++searchHydrationGeneration;
   const providerQuery = canonicalSearchQuery(query);
   state.lastSearchQuery = providerQuery;
   clearTimeout(suggestionTimer);
@@ -1977,8 +2140,13 @@ async function executeSearch(query) {
   searchPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   try {
     const results = await cachedBookSearch(providerQuery);
-    state.searchResults = results.map(enrichKnownBookMetadata);
+    state.searchResults = results.map((book) => {
+      const enriched = enrichKnownBookMetadata(book);
+      enriched._metadataHydrationPending = Boolean(enriched.provider_book_id);
+      return enriched;
+    });
     renderSearchResults();
+    hydrateSearchResultMetadata(state.searchResults, hydrationGeneration);
   } catch (error) {
     searchResults.replaceChildren();
     const message = document.createElement("div");
@@ -2257,6 +2425,10 @@ settingsSearchLimitSelect.addEventListener("change", () => {
   applySearchResultLimit(settingsSearchLimitSelect.value);
   showToast(`Künftig werden ${state.searchResultLimit} Suchergebnisse angezeigt.`);
 });
+settingsDateFormatSelect.addEventListener("change", () => {
+  applyDateFormat(settingsDateFormatSelect.value);
+  showToast(`Datumsformat: ${state.dateFormat}`);
+});
 function updateBookProviderSettings() {
   applyBookProviders(settingsPrimaryProviderSelect.value, settingsFallbackProviderSelect.value);
   const fallbackText = state.primaryProvider === state.fallbackProvider
@@ -2349,6 +2521,7 @@ async function initializeApp() {
   let storedFallbackProvider = appConfig.catalogue.fallbackProvider;
   let storedStartView = appConfig.defaults.startView;
   let storedMobileTextSize = appConfig.defaults.mobileTextSize;
+  let storedDateFormat = appConfig.defaults.dateFormat;
   try {
     storedTheme = localStorage.getItem("bookypedia-theme") || storedTheme;
     storedSort = localStorage.getItem("bookypedia-sort") || storedSort;
@@ -2357,6 +2530,7 @@ async function initializeApp() {
     storedFallbackProvider = localStorage.getItem("bookypedia-fallback-provider") || storedFallbackProvider;
     storedStartView = localStorage.getItem("bookypedia-start-view") || storedStartView;
     storedMobileTextSize = localStorage.getItem("bookypedia-mobile-text-size") || storedMobileTextSize;
+    storedDateFormat = localStorage.getItem("bookypedia-date-format") || storedDateFormat;
   } catch (_error) {}
   applyTheme(storedTheme, false);
   applySort(storedSort, false);
@@ -2364,6 +2538,7 @@ async function initializeApp() {
   applyBookProviders(storedPrimaryProvider, storedFallbackProvider, false);
   applyStartView(storedStartView, false);
   applyMobileTextSize(storedMobileTextSize, false);
+  applyDateFormat(storedDateFormat, false);
 
   try {
     await loadBooks();

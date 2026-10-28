@@ -563,6 +563,7 @@ def test_google_books_infers_tearbird_series_from_titles(monkeypatch):
     assert len(search_queries) == 2
     assert "inauthor:" in search_queries[0]
     assert "inauthor:" not in search_queries[1]
+    assert search_queries[1] == "Die Legende vom Tränenvogel"
 
 
 def test_catalogue_metadata_uses_provider_from_result(client, monkeypatch):
@@ -1165,6 +1166,67 @@ def test_series_endpoint_is_immediate_then_uses_background_result(client):
     assert response.get_json()["series"]["books"][0]["title"] == "A Wizard of Earthsea"
 
 
+def test_partial_google_refresh_does_not_remove_cached_series_members(client):
+    cache_module = importlib.import_module("readmore.series_cache")
+    with client.application.app_context():
+        db = importlib.import_module("readmore.db").get_db()
+        cache_module.enqueue_series_lookup(
+            db, "tearbird-1", ["Young-do Lee"], provider="google_books"
+        )
+        cache_module.persist_series_result(
+            db,
+            "tearbird-1",
+            ["Young-do Lee"],
+            {
+                "name": "Die Legende vom Tränenvogel",
+                "current_position": 1,
+                "source": "google_title",
+                "incomplete": True,
+                "books": [
+                    {
+                        "provider_book_id": "tearbird-1",
+                        "title": "Das Blut der Herzlosen",
+                        "authors": ["Young-do Lee"],
+                        "series_position": 1,
+                    },
+                    {
+                        "provider_book_id": "tearbird-2",
+                        "title": "Der träumende Krieger",
+                        "authors": ["Young-do Lee"],
+                        "series_position": 2,
+                    },
+                ],
+            },
+            provider="google_books",
+        )
+
+        # Eine spätere Google-Antwort enthält zeitweise nur den aktuellen Band.
+        cache_module.persist_series_result(
+            db,
+            "tearbird-2",
+            ["Young-do Lee"],
+            {
+                "name": "Die Legende vom Tränenvogel",
+                "current_position": 2,
+                "source": "google_title",
+                "incomplete": True,
+                "books": [{
+                    "provider_book_id": "tearbird-2",
+                    "title": "Der träumende Krieger",
+                    "authors": ["Young-do Lee"],
+                    "series_position": 2,
+                }],
+            },
+            provider="google_books",
+        )
+        series, status = cache_module.get_cached_series(
+            db, "tearbird-2", provider="google_books"
+        )
+
+    assert status == "ready"
+    assert [book["series_position"] for book in series["books"]] == ["1", "2"]
+
+
 def test_manual_book_has_no_catalogue_series(client):
     created = client.post(
         "/api/books", json={"title": "Eigenes Buch", "authors": "Eine Person", "status": "reading"}
@@ -1392,7 +1454,7 @@ def test_cached_partial_google_series_is_requeued_after_matching_upgrade(tmp_pat
                 provider, identity_key, name, source, incomplete,
                 metadata_version, fetched_at
             ) VALUES ('google_books', 'name:tearbird', 'Tearbird',
-                      'google_title', 1, 3, 1)
+                      'google_title', 1, 4, 1)
             """
         )
         db.execute(
@@ -1434,6 +1496,11 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="sort-button"' in html
     assert 'data-sort-option="rating_desc"' in html
     assert 'data-sort-option="rating_asc"' in html
+    script = client.get("/static/js/app.js").get_data(as_text=True)
+    assert "Open Library war kurz nicht erreichbar" not in script
+    assert "Vorhandene Angaben bleiben sichtbar" in script
+    assert "hydrateSearchResultMetadata(state.searchResults" in script
+    assert 'localStorage.setItem("bookypedia-date-format"' in script
     assert 'data-sort-option="title_asc"' in html
     assert 'data-sort-option="title_desc"' in html
     assert 'data-sort-option="added_desc"' in html
@@ -1444,6 +1511,7 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="settings-dialog"' in html
     assert 'id="settings-theme"' in html
     assert 'id="settings-search-limit"' in html
+    assert 'id="settings-date-format"' in html
     assert 'id="settings-primary-provider"' in html
     assert 'id="settings-fallback-provider"' in html
     assert 'id="settings-start-view"' in html
@@ -1483,8 +1551,15 @@ def test_frontend_exposes_all_appearance_palettes(client):
         "searchResultLimit": 4,
         "startView": "all",
         "mobileTextSize": 3,
+        "dateFormat": "DD-MM-YYYY",
     }
     assert config["options"]["searchResultLimits"] == [4, 6, 8, 12]
+    assert [option["value"] for option in config["options"]["dateFormats"]] == [
+        "DD-MM-YYYY",
+        "DD.MM.YYYY",
+        "YYYY-MM-DD",
+        "MM/DD/YYYY",
+    ]
     assert [provider["value"] for provider in config["options"]["bookProviders"]] == [
         "open_library",
         "google_books",

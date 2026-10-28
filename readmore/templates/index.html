@@ -44,8 +44,8 @@
       }
     } catch (_error) {}
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=48">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=54"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=49">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=55"></script>
 </head>
 <body>
   <header class="site-header">
@@ -197,6 +197,12 @@
         <label class="settings-item" for="settings-search-limit">
           <span><strong>Suchergebnisse</strong><small>Anzahl der Bücher in der großen Ergebnisansicht</small></span>
           <select id="settings-search-limit">
+            <option>Wird geladen …</option>
+          </select>
+        </label>
+        <label class="settings-item" for="settings-date-format">
+          <span><strong>Datumsformat</strong><small>Darstellung von Veröffentlichungs- und Verlaufsdaten</small></span>
+          <select id="settings-date-format">
             <option>Wird geladen …</option>
           </select>
         </label>
