@@ -166,6 +166,22 @@ systemctl list-timers epiloguehouse-deploy.timer --no-pager
 sudo systemctl start epiloguehouse-deploy.service
 sudo systemctl show epiloguehouse-deploy.service -p Result -p ExecMainStatus
 sudo journalctl -u epiloguehouse-deploy.service -n 100 --no-pager
+
+### Zuletzt deployed
+journalctl -u epiloguehouse-deploy.service \
+  --no-pager | grep epiloguehouse-deploy | tail -20
+
+### Wann der Timer zuletzt geprüft hat – auch wenn es keinen neuen Commit gab:
+systemctl show epiloguehouse-deploy.service \
+  -p ExecMainStartTimestamp \
+  -p ExecMainExitTimestamp \
+  -p Result \
+  -p ExecMainStatus
+
+### Den zuletzt erfolgreich übernommenen Commit siehst du so:
+cd /opt/bookypedia
+cat /var/lib/epiloguehouse-deploy/deployed-commit
+git log -1 --format='%h · %ad · %s' --date='format:%d.%m.%Y %H:%M:%S'
 ```
 
 Wenn das Deploy-Skript selbst geändert wurde, die installierte Kopie erneut
