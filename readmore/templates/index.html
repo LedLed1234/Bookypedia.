@@ -21,8 +21,8 @@
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=2">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=2">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=62">
-  <script defer src="{{ url_for('static', filename='js/media-app.js') }}?v=9"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=64">
+  <script defer src="{{ url_for('static', filename='js/media-app.js') }}?v=11"></script>
 </head>
 <body>
   <header class="site-header">
@@ -156,6 +156,22 @@
           <div class="media-episodes-list" id="media-episodes-list" tabindex="0" aria-label="Episodenliste"></div>
         </section>
       </section>
+    </div>
+  </dialog>
+
+  <dialog id="media-season-dialog" class="dialog media-season-dialog" aria-labelledby="media-season-dialog-title">
+    <div class="media-season-dialog-shell">
+      <button class="icon-button dialog-close media-season-dialog-close" type="button" aria-label="Staffelansicht schließen">×</button>
+      <header class="media-season-dialog-header">
+        <div class="media-season-dialog-poster" id="media-season-dialog-poster"></div>
+        <div class="media-season-dialog-copy">
+          <p class="eyebrow" id="media-season-dialog-series"></p>
+          <h2 id="media-season-dialog-title">Staffel</h2>
+          <p class="media-season-dialog-meta" id="media-season-dialog-meta"></p>
+          <p class="media-season-dialog-overview" id="media-season-dialog-overview"></p>
+        </div>
+      </header>
+      <div id="media-season-dialog-content"></div>
     </div>
   </dialog>
 

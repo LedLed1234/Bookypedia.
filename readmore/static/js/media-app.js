@@ -69,6 +69,7 @@ const state = {
   lastSearchQuery: "",
   pendingDelete: null,
   previewMedia: null,
+  previewSeason: null,
   ratingMedia: null,
   previewSeasonNumber: null,
 };
@@ -98,6 +99,8 @@ const deleteDialog = document.querySelector("#delete-dialog");
 const confirmDeleteButton = document.querySelector("#confirm-delete");
 const previewDialog = document.querySelector("#media-preview-dialog");
 const previewAddButton = document.querySelector("#media-preview-add");
+const seasonDialog = document.querySelector("#media-season-dialog");
+const seasonDialogContent = document.querySelector("#media-season-dialog-content");
 const ratingDialog = document.querySelector("#media-rating-dialog");
 const ratingForm = document.querySelector("#media-rating-form");
 const reviewInput = document.querySelector("#media-review");
@@ -733,13 +736,66 @@ function episodeCard(episode, media, seasonNumber) {
   return article;
 }
 
+function usesMobileSeasonDialog() {
+  return document.documentElement.classList.contains("platform-mobile")
+    || window.matchMedia("(max-width: 680px)").matches;
+}
+
+function activateSeasonTab(tabs, activeTab) {
+  tabs.querySelectorAll(".media-season-tab").forEach((candidate) => {
+    const selected = candidate === activeTab;
+    candidate.classList.toggle("active", selected);
+    candidate.setAttribute("aria-selected", String(selected));
+  });
+}
+
+function restoreEpisodesPanel() {
+  const panel = document.querySelector("#media-episodes-panel");
+  const section = document.querySelector("#media-series-section");
+  panel.hidden = true;
+  panel.removeAttribute("data-request-key");
+  if (panel.parentElement !== section) section.append(panel);
+}
+
+function renderMobileSeasonHeader(media, season) {
+  const title = season.name || `Staffel ${season.season_number}`;
+  const poster = {
+    ...season,
+    title,
+    cover_url: season.cover_url || media.cover_url,
+  };
+  document.querySelector("#media-season-dialog-poster").replaceChildren(posterElement(poster));
+  document.querySelector("#media-season-dialog-series").textContent = media.title;
+  document.querySelector("#media-season-dialog-title").textContent = title;
+  const episodeCount = Number(season.episode_count || season.episodes?.length || 0);
+  const year = String(season.air_date || "").slice(0, 4);
+  document.querySelector("#media-season-dialog-meta").textContent = [
+    year || null,
+    episodeCount ? `${episodeCount} ${episodeCount === 1 ? "Episode" : "Episoden"}` : null,
+  ].filter(Boolean).join(" · ");
+  document.querySelector("#media-season-dialog-overview").textContent = season.overview
+    || "Für diese Staffel ist noch keine Beschreibung verfügbar.";
+}
+
+function openMobileSeasonDialog(media, season) {
+  state.previewSeason = season;
+  renderMobileSeasonHeader(media, season);
+  const panel = document.querySelector("#media-episodes-panel");
+  seasonDialogContent.append(panel);
+  if (!seasonDialog.open) seasonDialog.showModal();
+  loadSeasonEpisodes(media, season);
+}
+
 function renderSeasonEpisodes(season, media) {
   const panel = document.querySelector("#media-episodes-panel");
   const list = document.querySelector("#media-episodes-list");
   panel.hidden = false;
-  document.querySelector("#media-episodes-title").textContent = season.name || `Staffel ${season.season_number}`;
+  document.querySelector("#media-episodes-title").textContent = seasonDialog.open
+    ? "Episoden"
+    : (season.name || `Staffel ${season.season_number}`);
   document.querySelector("#media-episodes-count").textContent = `${season.episodes.length} ${season.episodes.length === 1 ? "Episode" : "Episoden"}`;
   document.querySelector("#media-episodes-status").textContent = season.overview || "Wähle Sterne, um einzelne Episoden persönlich zu bewerten.";
+  if (seasonDialog.open) renderMobileSeasonHeader(media, season);
   configureSeasonAddButton(media, season);
   list.replaceChildren(...season.episodes.map((episode) => episodeCard(episode, media, season.season_number)));
   list.scrollTop = 0;
@@ -751,7 +807,9 @@ async function loadSeasonEpisodes(media, season) {
   const requestKey = `${mediaIdentity(media)}:${season.season_number}`;
   panel.hidden = false;
   panel.dataset.requestKey = requestKey;
-  document.querySelector("#media-episodes-title").textContent = `Staffel ${season.season_number}`;
+  document.querySelector("#media-episodes-title").textContent = seasonDialog.open
+    ? "Episoden"
+    : `Staffel ${season.season_number}`;
   document.querySelector("#media-episodes-count").textContent = "";
   document.querySelector("#media-episodes-status").textContent = "Episoden werden geladen …";
   configureSeasonAddButton(media, season);
@@ -827,10 +885,14 @@ function renderSeriesSeasons(series, media) {
   episodesPanel.hidden = true;
   document.querySelector("#media-series-title").textContent = series.name || media.title;
   document.querySelector("#media-series-count").textContent = `${series.seasons.length} ${series.seasons.length === 1 ? "Staffel" : "Staffeln"}`;
+  const mobileSeasonFlow = usesMobileSeasonDialog();
   document.querySelector("#media-series-status").textContent = series.seasons.length
-    ? "Wähle eine Staffel, um ihre Episoden zu öffnen."
+    ? (mobileSeasonFlow
+      ? "Wähle eine Staffel, um ihre Staffelansicht zu öffnen."
+      : "Wähle eine Staffel, um ihre Episoden zu öffnen.")
     : "TMDB führt für diese Serie noch keine regulären Staffeln.";
   let requestedTab = null;
+  let seasonOneTab = null;
   series.seasons.forEach((season) => {
     const tab = document.createElement("button");
     tab.className = "media-season-tab";
@@ -838,21 +900,26 @@ function renderSeriesSeasons(series, media) {
     tab.role = "tab";
     tab.textContent = `Staffel ${season.season_number}`;
     tab.setAttribute("aria-selected", "false");
-    tab.setAttribute("aria-controls", "media-episodes-panel");
+    tab.setAttribute("aria-controls", mobileSeasonFlow ? "media-season-dialog" : "media-episodes-panel");
+    if (mobileSeasonFlow) tab.setAttribute("aria-haspopup", "dialog");
     tab.addEventListener("click", () => {
-      tabs.querySelectorAll(".media-season-tab").forEach((candidate) => {
-        const selected = candidate === tab;
-        candidate.classList.toggle("active", selected);
-        candidate.setAttribute("aria-selected", String(selected));
-      });
-      loadSeasonEpisodes(media, season);
+      activateSeasonTab(tabs, tab);
+      if (usesMobileSeasonDialog()) {
+        openMobileSeasonDialog(media, season);
+      } else {
+        restoreEpisodesPanel();
+        loadSeasonEpisodes(media, season);
+      }
     });
     tabs.append(tab);
     if (Number(state.previewSeasonNumber) === Number(season.season_number)) requestedTab = tab;
+    if (Number(season.season_number) === 1) seasonOneTab = tab;
   });
-  if (requestedTab) {
+  const initialTab = requestedTab || seasonOneTab || tabs.querySelector(".media-season-tab");
+  if (initialTab) {
     state.previewSeasonNumber = null;
-    requestedTab.click();
+    if (mobileSeasonFlow) activateSeasonTab(tabs, initialTab);
+    else initialTab.click();
   }
 }
 
@@ -1194,8 +1261,14 @@ document.querySelector("#clear-media-rating").addEventListener("click", () => {
 });
 deleteDialog.addEventListener("close", () => { state.pendingDelete = null; });
 previewDialog.addEventListener("close", () => {
+  if (seasonDialog.open) seasonDialog.close();
   state.previewMedia = null;
+  state.previewSeason = null;
   state.previewSeasonNumber = null;
+});
+seasonDialog.addEventListener("close", () => {
+  state.previewSeason = null;
+  restoreEpisodesPanel();
 });
 ratingDialog.addEventListener("close", () => { state.ratingMedia = null; });
 document.querySelectorAll(".dialog-close").forEach((button) => button.addEventListener("click", () => button.closest("dialog").close()));

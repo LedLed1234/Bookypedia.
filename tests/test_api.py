@@ -2328,6 +2328,9 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="media-season-tabs"' in html
     assert 'id="media-episodes-list"' in html
     assert 'id="media-season-add"' in html
+    assert 'id="media-season-dialog"' in html
+    assert 'id="media-season-dialog-content"' in html
+    assert 'id="media-season-dialog-poster"' in html
     assert 'id="media-rating-dialog"' in html
     assert 'data-sort-option="rating_desc"' in html
     script = client.get("/static/js/media-app.js").get_data(as_text=True)
@@ -2339,6 +2342,11 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert "async function loadMovieCollection(media)" in script
     assert "async function loadSeriesSeasons(media)" in script
     assert "async function loadSeasonEpisodes(media, season)" in script
+    assert 'const initialTab = requestedTab || seasonOneTab || tabs.querySelector(".media-season-tab")' in script
+    assert "if (Number(season.season_number) === 1) seasonOneTab = tab" in script
+    assert "function usesMobileSeasonDialog()" in script
+    assert "function openMobileSeasonDialog(media, season)" in script
+    assert "if (mobileSeasonFlow) activateSeasonTab(tabs, initialTab)" in script
     assert "function episodeRatingControl(episode, media, seasonNumber)" in script
     assert "async function addSeasonToCollection(media, season, button)" in script
     assert 'api("/api/media/seasons"' in script
