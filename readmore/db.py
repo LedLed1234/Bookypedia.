@@ -53,6 +53,84 @@ CREATE TABLE IF NOT EXISTS books (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS media_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL DEFAULT 'tmdb',
+    tmdb_id INTEGER NOT NULL CHECK (tmdb_id > 0),
+    media_type TEXT NOT NULL CHECK (media_type IN ('movie', 'tv')),
+    title TEXT NOT NULL,
+    original_title TEXT,
+    overview TEXT,
+    release_date TEXT,
+    release_year INTEGER,
+    original_language TEXT,
+    poster_url TEXT,
+    backdrop_url TEXT,
+    vote_average REAL,
+    vote_count INTEGER NOT NULL DEFAULT 0 CHECK (vote_count >= 0),
+    rating INTEGER CHECK (rating IS NULL OR rating BETWEEN 1 AND 5),
+    review TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'watchlist'
+        CHECK (status IN ('watchlist', 'watching', 'completed', 'dropped')),
+    watchlist_at TEXT,
+    watching_at TEXT,
+    completed_at TEXT,
+    dropped_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, provider, media_type, tmdb_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_items_user_status_updated
+    ON media_items(user_id, status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS episode_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    tv_tmdb_id INTEGER NOT NULL CHECK (tv_tmdb_id > 0),
+    season_number INTEGER NOT NULL CHECK (season_number > 0),
+    episode_number INTEGER NOT NULL CHECK (episode_number > 0),
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, tv_tmdb_id, season_number, episode_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_episode_ratings_user_series
+    ON episode_ratings(user_id, tv_tmdb_id, season_number);
+
+CREATE TABLE IF NOT EXISTS saved_seasons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL DEFAULT 'tmdb',
+    tv_tmdb_id INTEGER NOT NULL CHECK (tv_tmdb_id > 0),
+    season_number INTEGER NOT NULL CHECK (season_number > 0),
+    series_title TEXT NOT NULL,
+    season_title TEXT NOT NULL,
+    series_overview TEXT,
+    season_overview TEXT,
+    air_date TEXT,
+    release_year INTEGER,
+    original_language TEXT,
+    poster_url TEXT,
+    series_poster_url TEXT,
+    backdrop_url TEXT,
+    episode_count INTEGER NOT NULL DEFAULT 0 CHECK (episode_count >= 0),
+    status TEXT NOT NULL DEFAULT 'watchlist'
+        CHECK (status IN ('watchlist', 'watching', 'completed', 'dropped')),
+    watchlist_at TEXT,
+    watching_at TEXT,
+    completed_at TEXT,
+    dropped_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, provider, tv_tmdb_id, season_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_seasons_user_status_updated
+    ON saved_seasons(user_id, status, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS series (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider TEXT NOT NULL,
@@ -144,6 +222,19 @@ CREATE TABLE IF NOT EXISTS cover_cache (
 CREATE INDEX IF NOT EXISTS idx_catalogue_search_cache_fetched
     ON catalogue_search_cache(fetched_at);
 
+CREATE TABLE IF NOT EXISTS tmdb_cache (
+    cache_key TEXT PRIMARY KEY,
+    resource_type TEXT NOT NULL CHECK (
+        resource_type IN ('search', 'movie_collection', 'tv_series', 'tv_season')
+    ),
+    payload_json TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_tmdb_cache_fetched
+    ON tmdb_cache(fetched_at);
+
 CREATE TABLE IF NOT EXISTS metadata_lookups (
     book_id INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
     provider TEXT NOT NULL,
@@ -222,6 +313,17 @@ def init_db():
     for column, definition in migrations.items():
         if column not in columns:
             db.execute(f"ALTER TABLE books ADD COLUMN {column} {definition}")
+
+    media_columns = {
+        row["name"] for row in db.execute("PRAGMA table_info(media_items)").fetchall()
+    }
+    media_migrations = {
+        "rating": "INTEGER CHECK (rating IS NULL OR rating BETWEEN 1 AND 5)",
+        "review": "TEXT NOT NULL DEFAULT ''",
+    }
+    for column, definition in media_migrations.items():
+        if column not in media_columns:
+            db.execute(f"ALTER TABLE media_items ADD COLUMN {column} {definition}")
     db.execute(
         """
         UPDATE books

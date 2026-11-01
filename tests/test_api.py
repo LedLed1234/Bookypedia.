@@ -15,6 +15,22 @@ BOOK = {
     "status": "want_to_read",
 }
 
+MEDIA = {
+    "provider": "tmdb",
+    "tmdb_id": 70523,
+    "media_type": "tv",
+    "title": "Dark",
+    "original_title": None,
+    "overview": "Vier Familien suchen nach Antworten.",
+    "release_date": "2017-12-01",
+    "release_year": 2017,
+    "original_language": "de",
+    "cover_url": "https://image.tmdb.org/t/p/w500/dark.jpg",
+    "backdrop_url": "https://image.tmdb.org/t/p/w780/dark-backdrop.jpg",
+    "vote_average": 8.4,
+    "vote_count": 7957,
+}
+
 
 def test_complete_book_lifecycle(client):
     created = client.post("/api/books", json=BOOK)
@@ -38,6 +54,118 @@ def test_complete_book_lifecycle(client):
 
     assert client.delete(f"/api/books/{book_id}").status_code == 204
     assert client.get("/api/books").get_json()["books"] == []
+
+
+def test_complete_media_lifecycle(client):
+    created_response = client.post("/api/media", json={**MEDIA, "status": "watchlist"})
+    assert created_response.status_code == 201
+    created = created_response.get_json()["media"]
+    assert created["title"] == "Dark"
+    assert created["status"] == "watchlist"
+    assert created["cover_url"] == MEDIA["cover_url"]
+    assert created["watchlist_at"] is not None
+
+    listed = client.get("/api/media").get_json()["media"]
+    assert [item["tmdb_id"] for item in listed] == [70523]
+
+    changed = client.patch(f"/api/media/{created['id']}", json={"status": "watching"})
+    assert changed.status_code == 200
+    assert changed.get_json()["media"]["status"] == "watching"
+    assert changed.get_json()["media"]["watching_at"] is not None
+
+    reviewed = client.patch(
+        f"/api/media/{created['id']}",
+        json={"rating": 5, "review": "Düster, klug und großartig gespielt."},
+    )
+    assert reviewed.status_code == 200
+    assert reviewed.get_json()["media"]["rating"] == 5
+    assert reviewed.get_json()["media"]["review"] == "Düster, klug und großartig gespielt."
+
+    cleared = client.patch(
+        f"/api/media/{created['id']}", json={"rating": None, "review": ""}
+    )
+    assert cleared.get_json()["media"]["rating"] is None
+    assert cleared.get_json()["media"]["review"] == ""
+
+    filtered = client.get("/api/media?status=watching").get_json()["media"]
+    assert [item["id"] for item in filtered] == [created["id"]]
+    assert client.get("/api/media?status=read").status_code == 400
+
+    duplicate = client.post("/api/media", json=MEDIA)
+    assert duplicate.status_code == 409
+    assert duplicate.get_json()["media"]["id"] == created["id"]
+
+    assert client.delete(f"/api/media/{created['id']}").status_code == 204
+    assert client.get("/api/media").get_json()["media"] == []
+
+
+def test_saved_season_lifecycle_is_independent_from_series_collection(client):
+    payload = {
+        "tv_tmdb_id": 1399,
+        "season_number": 1,
+        "series_title": "Game of Thrones",
+        "season_title": "Staffel 1",
+        "series_overview": "Der Kampf um Westeros.",
+        "season_overview": "Der Winter naht.",
+        "air_date": "2011-04-17",
+        "original_language": "en",
+        "cover_url": "https://image.tmdb.org/t/p/w342/season-one.jpg",
+        "series_cover_url": "https://image.tmdb.org/t/p/w500/game-of-thrones.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w780/game-of-thrones-backdrop.jpg",
+        "episode_count": 10,
+    }
+
+    created_response = client.post("/api/media/seasons", json=payload)
+    assert created_response.status_code == 201
+    season = created_response.get_json()["season"]
+    assert season["item_type"] == "season"
+    assert season["title"] == "Game of Thrones – Staffel 1"
+    assert season["release_year"] == 2011
+    assert season["status"] == "watchlist"
+    assert client.get("/api/media").get_json()["media"] == []
+
+    listed = client.get("/api/media/seasons").get_json()["seasons"]
+    assert [item["id"] for item in listed] == [season["id"]]
+
+    changed = client.patch(
+        f"/api/media/seasons/{season['id']}",
+        json={"status": "watching"},
+    )
+    assert changed.status_code == 200
+    assert changed.get_json()["season"]["status"] == "watching"
+    assert changed.get_json()["season"]["watching_at"] is not None
+
+    duplicate = client.post("/api/media/seasons", json=payload)
+    assert duplicate.status_code == 409
+    assert duplicate.get_json()["season"]["id"] == season["id"]
+
+    assert client.delete(f"/api/media/seasons/{season['id']}").status_code == 204
+    assert client.get("/api/media/seasons").get_json()["seasons"] == []
+
+
+def test_media_rejects_invalid_identity_and_external_images(client):
+    assert client.post("/api/media", json={"title": "Ohne TMDB"}).status_code == 400
+    response = client.post(
+        "/api/media",
+        json={
+            **MEDIA,
+            "tmdb_id": 11,
+            "media_type": "movie",
+            "title": "Star Wars",
+            "cover_url": "https://example.com/not-tmdb.jpg",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["media"]["cover_url"] is None
+
+
+def test_media_rejects_invalid_rating(client):
+    media = client.post("/api/media", json=MEDIA).get_json()["media"]
+    assert client.patch(f"/api/media/{media['id']}", json={"rating": 0}).status_code == 400
+    assert client.patch(f"/api/media/{media['id']}", json={"rating": 6}).status_code == 400
+    assert client.patch(f"/api/media/{media['id']}", json={"rating": 3.5}).status_code == 400
+    assert client.patch(f"/api/media/{media['id']}", json={}).status_code == 400
 
 
 def test_provider_cover_is_downloaded_once_and_served_locally(client, monkeypatch):
@@ -500,6 +628,383 @@ def test_search_uses_normalized_provider_results(client, monkeypatch):
     response = client.get("/api/search?q=Dune")
     assert response.status_code == 200
     assert response.get_json()["results"] == expected
+
+
+def test_tmdb_provider_normalizes_movies_and_series(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.tmdb")
+    request = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "results": [
+                    {
+                        "id": 11,
+                        "media_type": "movie",
+                        "title": "Krieg der Sterne",
+                        "original_title": "Star Wars",
+                        "overview": "Eine weit entfernte Galaxis.",
+                        "release_date": "1977-05-25",
+                        "poster_path": "/star-wars.jpg",
+                        "backdrop_path": "/space.jpg",
+                        "original_language": "en",
+                        "vote_average": 8.2,
+                        "vote_count": 1234,
+                        "popularity": 99.5,
+                    },
+                    {
+                        "id": 1396,
+                        "media_type": "tv",
+                        "name": "Breaking Bad",
+                        "original_name": "Breaking Bad",
+                        "overview": "Ein Chemielehrer verändert sein Leben.",
+                        "first_air_date": "2008-01-20",
+                        "poster_path": "/breaking-bad.jpg",
+                        "original_language": "en",
+                        "vote_average": 8.9,
+                        "vote_count": 15000,
+                    },
+                    {"id": 1, "media_type": "person", "name": "Nicht anzeigen"},
+                ]
+            }
+
+    def fake_get(url, **kwargs):
+        request.update(url=url, **kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(provider_module.requests, "get", fake_get)
+    results = provider_module.TMDBProvider("secret-token").search("Star", limit=8)
+
+    assert [result["media_type"] for result in results] == ["movie", "tv"]
+    assert results[0]["title"] == "Krieg der Sterne"
+    assert results[0]["original_title"] == "Star Wars"
+    assert results[0]["release_year"] == 1977
+    assert results[0]["cover_url"] == "https://image.tmdb.org/t/p/w500/star-wars.jpg"
+    assert results[1]["title"] == "Breaking Bad"
+    assert results[1]["original_title"] is None
+    assert request["params"]["language"] == "de-DE"
+    assert request["params"]["region"] == "DE"
+    assert request["headers"]["Authorization"] == "Bearer secret-token"
+
+
+def test_tmdb_provider_loads_and_sorts_movie_collection(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.tmdb")
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        if url.endswith("/movie/11"):
+            return FakeResponse(
+                {"id": 11, "belongs_to_collection": {"id": 10, "name": "Star Wars Collection"}}
+            )
+        assert url.endswith("/collection/10")
+        return FakeResponse(
+            {
+                "id": 10,
+                "name": "Star Wars Collection",
+                "overview": "Eine weit entfernte Galaxis.",
+                "poster_path": "/collection.jpg",
+                "parts": [
+                    {
+                        "id": 1891,
+                        "title": "Das Imperium schlägt zurück",
+                        "release_date": "1980-05-20",
+                        "poster_path": "/empire.jpg",
+                        "vote_average": 8.4,
+                        "vote_count": 100,
+                    },
+                    {
+                        "id": 11,
+                        "title": "Krieg der Sterne",
+                        "release_date": "1977-05-25",
+                        "poster_path": "/star-wars.jpg",
+                        "vote_average": 8.2,
+                        "vote_count": 200,
+                    },
+                ],
+            }
+        )
+
+    monkeypatch.setattr(provider_module.requests, "get", fake_get)
+    collection = provider_module.TMDBProvider("secret-token").movie_collection(11)
+
+    assert collection["tmdb_id"] == 10
+    assert collection["name"] == "Star Wars Collection"
+    assert [part["tmdb_id"] for part in collection["parts"]] == [11, 1891]
+    assert [part["collection_position"] for part in collection["parts"]] == [1, 2]
+    assert collection["parts"][0]["media_type"] == "movie"
+    assert collection["parts"][0]["cover_url"].endswith("/w342/star-wars.jpg")
+    assert [call[1]["params"]["language"] for call in calls] == ["de-DE", "de-DE"]
+
+
+def test_tmdb_provider_loads_regular_seasons_and_episodes(monkeypatch):
+    provider_module = importlib.import_module("readmore.providers.tmdb")
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.payload
+
+    def fake_get(url, **_kwargs):
+        if url.endswith("/tv/1399"):
+            return FakeResponse(
+                {
+                    "id": 1399,
+                    "name": "Game of Thrones",
+                    "seasons": [
+                        {"id": 90, "season_number": 0, "name": "Specials", "episode_count": 10},
+                        {"id": 82, "season_number": 2, "name": "Staffel 2", "episode_count": 10},
+                        {
+                            "id": 81,
+                            "season_number": 1,
+                            "name": "Staffel 1",
+                            "episode_count": 10,
+                            "poster_path": "/season-one.jpg",
+                        },
+                    ],
+                }
+            )
+        assert url.endswith("/tv/1399/season/1")
+        return FakeResponse(
+            {
+                "id": 81,
+                "name": "Staffel 1",
+                "season_number": 1,
+                "episodes": [
+                    {
+                        "id": 101,
+                        "episode_number": 2,
+                        "name": "Der Königsweg",
+                        "air_date": "2011-04-24",
+                        "runtime": 56,
+                        "still_path": "/episode-two.jpg",
+                        "vote_average": 8.6,
+                        "vote_count": 100,
+                    },
+                    {"id": 100, "episode_number": 1, "name": "Der Winter naht"},
+                ],
+            }
+        )
+
+    monkeypatch.setattr(provider_module.requests, "get", fake_get)
+    provider = provider_module.TMDBProvider("secret-token")
+    series = provider.tv_seasons(1399)
+    season = provider.tv_season(1399, 1)
+
+    assert series["number_of_seasons"] == 2
+    assert [item["season_number"] for item in series["seasons"]] == [1, 2]
+    assert series["seasons"][0]["cover_url"].endswith("/w342/season-one.jpg")
+    assert [item["episode_number"] for item in season["episodes"]] == [1, 2]
+    assert season["episodes"][1]["still_url"].endswith("/w300/episode-two.jpg")
+    assert season["episodes"][1]["runtime"] == 56
+
+
+def test_media_collection_endpoint_is_movie_only_and_user_scoped(client, monkeypatch):
+    api_module = importlib.import_module("readmore.api")
+    client.application.config["TMDB_READ_ACCESS_TOKEN"] = "server-only-token"
+    movie = client.post(
+        "/api/media",
+        json={**MEDIA, "tmdb_id": 11, "media_type": "movie", "title": "Krieg der Sterne"},
+    ).get_json()["media"]
+    series = client.post("/api/media", json=MEDIA).get_json()["media"]
+    received = []
+    collection_calls = []
+
+    class FakeTMDBProvider:
+        def __init__(self, token):
+            received.append(token)
+
+        def movie_collection(self, movie_id):
+            assert movie_id == 11
+            collection_calls.append(movie_id)
+            return {"tmdb_id": 10, "name": "Star Wars Collection", "parts": []}
+
+    monkeypatch.setattr(api_module, "TMDBProvider", FakeTMDBProvider)
+    response = client.get(f"/api/media/{movie['id']}/collection")
+
+    assert response.status_code == 200
+    assert response.get_json()["collection"]["tmdb_id"] == 10
+    preview_response = client.get("/api/media/movie/11/collection")
+    assert preview_response.status_code == 200
+    assert preview_response.get_json()["collection"]["name"] == "Star Wars Collection"
+    assert received == ["server-only-token", "server-only-token"]
+    assert collection_calls == [11]
+    assert client.get(f"/api/media/{series['id']}/collection").get_json() == {"collection": None}
+    assert client.get("/api/media/999999/collection").status_code == 404
+
+
+def test_tv_seasons_and_persistent_episode_ratings_work_without_saved_series(client, monkeypatch):
+    api_module = importlib.import_module("readmore.api")
+    received = []
+    season_calls = []
+
+    class FakeTMDBProvider:
+        def __init__(self, token):
+            received.append(token)
+
+        def tv_seasons(self, series_id):
+            assert series_id == 1399
+            season_calls.append((series_id, None))
+            return {
+                "tmdb_id": 1399,
+                "name": "Game of Thrones",
+                "number_of_seasons": 1,
+                "seasons": [{"season_number": 1, "name": "Staffel 1", "episode_count": 1}],
+            }
+
+        def tv_season(self, series_id, season_number):
+            assert (series_id, season_number) == (1399, 1)
+            season_calls.append((series_id, season_number))
+            return {
+                "tmdb_id": 1399,
+                "season_number": 1,
+                "name": "Staffel 1",
+                "episodes": [{"episode_number": 1, "name": "Der Winter naht"}],
+            }
+
+    client.application.config["TMDB_READ_ACCESS_TOKEN"] = "server-only-token"
+    monkeypatch.setattr(api_module, "TMDBProvider", FakeTMDBProvider)
+
+    seasons = client.get("/api/media/tv/1399/seasons")
+    assert seasons.status_code == 200
+    assert seasons.get_json()["series"]["seasons"][0]["season_number"] == 1
+
+    initial = client.get("/api/media/tv/1399/seasons/1")
+    assert initial.status_code == 200
+    assert initial.get_json()["season"]["episodes"][0]["user_rating"] is None
+
+    rated = client.patch(
+        "/api/media/tv/1399/seasons/1/episodes/1/rating",
+        json={"rating": 5},
+    )
+    assert rated.status_code == 200
+    assert rated.get_json() == {"rating": 5}
+    assert client.get("/api/media").get_json()["media"] == []
+    assert client.get("/api/media/tv/1399/seasons/1").get_json()["season"]["episodes"][0]["user_rating"] == 5
+
+    for invalid in (0, 6, 3.5, True):
+        response = client.patch(
+            "/api/media/tv/1399/seasons/1/episodes/1/rating",
+            json={"rating": invalid},
+        )
+        assert response.status_code == 400
+
+    cleared = client.patch(
+        "/api/media/tv/1399/seasons/1/episodes/1/rating",
+        json={"rating": None},
+    )
+    assert cleared.get_json() == {"rating": None}
+    assert client.get("/api/media/tv/1399/seasons/1").get_json()["season"]["episodes"][0]["user_rating"] is None
+    assert received == ["server-only-token"] * 4
+    assert season_calls == [(1399, None), (1399, 1)]
+
+
+def test_media_search_uses_tmdb_without_exposing_token(client, monkeypatch):
+    api_module = importlib.import_module("readmore.api")
+    api_module._SEARCH_CACHE.clear()
+    client.application.config["TMDB_READ_ACCESS_TOKEN"] = "server-only-token"
+    received = []
+
+    class FakeTMDBProvider:
+        cache_identity = "tmdb:test"
+
+        def __init__(self, token):
+            received.append(token)
+
+        def search(self, query, limit):
+            assert query == "Dark"
+            assert limit == 6
+            return [{"provider": "tmdb", "tmdb_id": 70523, "media_type": "tv", "title": "Dark"}]
+
+    monkeypatch.setattr(api_module, "TMDBProvider", FakeTMDBProvider)
+    response = client.get("/api/media/search?q=Dark&limit=6")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "provider": "tmdb",
+        "results": [{"provider": "tmdb", "tmdb_id": 70523, "media_type": "tv", "title": "Dark"}],
+    }
+    assert received == ["server-only-token"]
+    assert b"server-only-token" not in response.data
+
+
+def test_tmdb_search_uses_persistent_cache_and_stale_fallback(client, monkeypatch):
+    api_module = importlib.import_module("readmore.api")
+    cache_module = importlib.import_module("readmore.tmdb_cache")
+    db_module = importlib.import_module("readmore.db")
+    calls = []
+    provider_fails = {"value": False}
+
+    class FakeTMDBProvider:
+        def __init__(self, _token):
+            pass
+
+        def search(self, query, limit):
+            calls.append((query, limit))
+            if provider_fails["value"]:
+                raise api_module.ProviderUnavailable("TMDB ist gerade offline.")
+            return [{"provider": "tmdb", "tmdb_id": 1399, "media_type": "tv", "title": "Game of Thrones"}]
+
+    monkeypatch.setattr(api_module, "TMDBProvider", FakeTMDBProvider)
+
+    first = client.get("/api/media/search?q=Game%20of%20Thrones&limit=4")
+    second = client.get("/api/media/search?q=Game%20of%20Thrones&limit=4")
+    assert first.status_code == second.status_code == 200
+    assert calls == [("Game of Thrones", 4)]
+
+    with client.application.app_context():
+        db = db_module.get_db()
+        cached = db.execute(
+            "SELECT resource_type, payload_json FROM tmdb_cache"
+        ).fetchone()
+        assert cached["resource_type"] == "search"
+        assert "Game of Thrones" in cached["payload_json"]
+        db.execute(
+            "UPDATE tmdb_cache SET fetched_at = unixepoch() - ?",
+            (cache_module.SEARCH_TTL_SECONDS + 1,),
+        )
+        db.commit()
+
+    provider_fails["value"] = True
+    stale = client.get("/api/media/search?q=Game%20of%20Thrones&limit=4")
+    assert stale.status_code == 200
+    assert stale.get_json() == first.get_json()
+    assert calls == [("Game of Thrones", 4), ("Game of Thrones", 4)]
+
+
+def test_tmdb_provider_requires_read_access_token():
+    provider_module = importlib.import_module("readmore.providers.tmdb")
+
+    try:
+        provider_module.TMDBProvider("").search("Dune")
+    except provider_module.ProviderUnavailable as error:
+        assert "Read Access Token" in str(error)
+    else:
+        raise AssertionError("TMDB-Suche ohne Token muss fehlschlagen")
 
 
 def test_search_and_book_text_limits_are_enforced_by_backend(client, monkeypatch):
@@ -1802,71 +2307,68 @@ def test_cached_subject_series_is_requeued_for_edition_upgrade(tmp_path):
 
 def test_frontend_exposes_all_appearance_palettes(client):
     html = client.get("/").get_data(as_text=True)
-    assert 'aria-label="Epiloguehouse Startseite"' in html
+    assert 'aria-label="Moviepedia Startseite"' in html
     assert "Hello, Test User" in html
     assert 'data-book-info-symbol="!"' in html
     assert 'classList.add("platform-mobile")' in html
     assert 'id="appearance-button"' in html
-    assert 'id="search-suggestions"' in html
-    assert 'aria-controls="search-suggestions"' in html
     assert 'id="delete-dialog"' in html
     assert 'id="confirm-delete"' in html
-    assert 'id="book-dialog"' in html
-    assert 'id="series-content"' in html
-    assert 'id="grouping-button"' in html
-    assert 'id="collection-dialog"' in html
-    assert 'id="collection-book-list"' in html
+    assert 'id="media-grid"' in html
     assert 'id="sort-button"' in html
+    assert 'id="media-type-button"' in html
+    assert 'id="season-visibility-button"' in html
+    assert 'aria-pressed="false"' in html
+    assert 'data-media-type-option="movie"' in html
+    assert 'data-media-type-option="tv"' in html
+    assert 'id="media-preview-dialog"' in html
+    assert 'id="media-collection-section"' in html
+    assert 'id="media-series-section"' in html
+    assert 'style="--season-tabs-per-row: 6"' in html
+    assert 'id="media-season-tabs"' in html
+    assert 'id="media-episodes-list"' in html
+    assert 'id="media-season-add"' in html
+    assert 'id="media-rating-dialog"' in html
     assert 'data-sort-option="rating_desc"' in html
-    assert 'data-sort-option="rating_asc"' in html
-    script = client.get("/static/js/app.js").get_data(as_text=True)
-    assert "Open Library war kurz nicht erreichbar" not in script
-    assert "Vorhandene Angaben bleiben sichtbar" in script
-    assert "hydrateSearchResultMetadata(state.searchResults" in script
-    assert 'localStorage.setItem("bookypedia-date-format"' in script
+    script = client.get("/static/js/media-app.js").get_data(as_text=True)
+    assert "/api/media/search?q=${encodeURIComponent(query)}&limit=${state.searchLimit}" in script
+    assert 'api("/api/media"' in script
+    assert "function libraryCard(media)" in script
+    assert "function openMediaPreview(media, infoOnly = false, seasonNumber = null)" in script
+    assert "openMediaPreview(media, true)" in script
+    assert "async function loadMovieCollection(media)" in script
+    assert "async function loadSeriesSeasons(media)" in script
+    assert "async function loadSeasonEpisodes(media, season)" in script
+    assert "function episodeRatingControl(episode, media, seasonNumber)" in script
+    assert "async function addSeasonToCollection(media, season, button)" in script
+    assert 'api("/api/media/seasons"' in script
+    assert 'localStorage.setItem("moviepedia-show-seasons"' in script
+    assert "`Film ${part.collection_position}`" in script
+    assert "`/api/media/movie/${media.tmdb_id}/collection`" in script
+    assert 'localStorage.setItem("moviepedia-media-type"' in script
+    assert "dataset.bookInfoSymbol" in script
+    assert "async function saveRating(event)" in script
+    assert 'localStorage.setItem("moviepedia-start-view"' in script
     assert 'data-sort-option="title_asc"' in html
     assert 'data-sort-option="title_desc"' in html
     assert 'data-sort-option="added_desc"' in html
     assert 'data-sort-option="added_asc"' in html
-    assert 'id="reading-history"' in html
-    assert 'id="reading-history-list"' in html
     assert 'id="open-settings"' in html
     assert 'id="settings-dialog"' in html
     assert 'id="settings-theme"' in html
     assert 'id="settings-search-limit"' in html
-    assert 'id="settings-date-format"' in html
-    assert 'id="settings-primary-provider"' in html
-    assert 'id="settings-fallback-provider"' in html
     assert 'id="settings-start-view"' in html
-    assert 'id="settings-mobile-text-size"' in html
-    assert 'id="review-reader-dialog"' in html
-    assert 'id="review-reader-copy"' in html
-    assert 'id="review-character-count"' in html
-    assert 'name="review" rows="6" maxlength="2000"' in html
     assert 'id="search-input" name="q" type="search" minlength="2" maxlength="250"' in html
-    assert 'name="title" required maxlength="300"' in html
-    assert 'name="authors" maxlength="500"' in html
     assert 'class="settings-version"' in html
     assert client.application.config["BUILD_VERSION"] in html
-    assert 'data-filter="unread"' in html
-    assert '<span>Ungelesen</span>' in html
-    assert '<span>Lese ich</span>' in html
-    assert '<span>Gelesen</span>' in html
-    assert '<span>Wunschliste</span>' in html
-    assert '<span>Im Besitz</span>' in html
-    assert 'id="book-dialog-original"' in html
-    assert 'id="book-dialog-info"' in html
-    assert 'id="book-dialog-main-view"' in html
-    assert 'id="book-dialog-info-view"' in html
-    assert 'id="book-info-back"' in html
-    assert 'id="book-info-source"' in html
-    assert 'id="book-description-toggle"' in html
-    assert 'aria-controls="book-description-copy"' in html
-    assert 'id="book-dialog-back"' not in html
-    assert 'id="book-dialog-status"' not in html
-    assert 'id="book-dialog-save"' not in html
-    assert 'id="book-dialog-review"' not in html
-    assert "automatisch zu „Gelesen“ verschoben" in html
+    for status in ("watchlist", "watching", "completed", "dropped"):
+        assert f'data-filter="{status}"' in html
+        assert f'<span>{status.title()}</span>' in html
+    assert "Alle Bücher" not in html
+    assert "Ungelesen" not in html
+    assert "Lese ich" not in html
+    assert "Gelesen" not in html
+    assert "Im Besitz" not in html
     for theme in ("red", "blue-white", "green", "brown", "cozy", "light"):
         assert f'data-theme-option="{theme}"' in html
 
@@ -1883,6 +2385,7 @@ def test_frontend_exposes_all_appearance_palettes(client):
         "mobileTextSize": 3,
         "dateFormat": "DD-MM-YYYY",
         "reviewMaxLength": 2000,
+        "seasonTabsPerRow": 6,
         "searchMaxLength": 250,
         "bookTitleMaxLength": 300,
         "bookAuthorsMaxLength": 500,

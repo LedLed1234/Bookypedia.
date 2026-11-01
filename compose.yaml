@@ -9,10 +9,11 @@ services:
       BOOK_PROVIDER: ${BOOK_PROVIDER:-}
       BOOK_FALLBACK_PROVIDER: ${BOOK_FALLBACK_PROVIDER:-}
       GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY:-}
+      TMDB_READ_ACCESS_TOKEN: ${TMDB_READ_ACCESS_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-json}
     ports:
-      - "127.0.0.1:5000:5000"
+      - "127.0.0.1:5001:5000"
     volumes:
       - .:/app
       - readmore_data:/data

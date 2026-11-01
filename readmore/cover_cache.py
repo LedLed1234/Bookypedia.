@@ -108,7 +108,7 @@ def _download_cover(source_url):
     for _redirect in range(6):
         response = requests.get(
             request_url,
-            headers={"User-Agent": "Epiloguehouse/1.0 (cover cache)"},
+            headers={"User-Agent": "Moviepedia/1.0 (cover cache)"},
             stream=True,
             timeout=DOWNLOAD_TIMEOUT,
             allow_redirects=False,

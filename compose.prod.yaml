@@ -9,6 +9,7 @@ services:
       BOOK_PROVIDER: ${BOOK_PROVIDER:-}
       BOOK_FALLBACK_PROVIDER: ${BOOK_FALLBACK_PROVIDER:-}
       GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY:-}
+      TMDB_READ_ACCESS_TOKEN: ${TMDB_READ_ACCESS_TOKEN:-}
       APP_ENV: production
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY muss in der .env-Datei gesetzt sein}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-0}
@@ -16,7 +17,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-json}
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
     volumes:
       - readmore_prod_data:/data
     healthcheck:

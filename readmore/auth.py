@@ -352,12 +352,12 @@ def logout():
 
 @click.group("user")
 def user_cli():
-    """Bookypedia-Konten verwalten."""
+    """Moviepedia-Konten verwalten."""
 
 
 @user_cli.command("create")
 @click.argument("username")
-@click.option("--display-name", help="Anzeigename in Bookypedia.")
+@click.option("--display-name", help="Anzeigename in Moviepedia.")
 @click.option(
     "--no-password-change",
     is_flag=True,

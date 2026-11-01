@@ -38,7 +38,7 @@ def login(client, username, password=PASSWORD):
     )
 
 
-def test_carli_uses_bear_info_symbol_case_insensitively(tmp_path):
+def test_carli_keeps_personal_symbol_case_insensitively(tmp_path):
     app = make_app(tmp_path)
     add_user(app, "cArLi")
     client = app.test_client()
@@ -49,30 +49,21 @@ def test_carli_uses_bear_info_symbol_case_insensitively(tmp_path):
     symbol_match = re.search(r'data-book-info-symbol="([^"]+)"', html)
     assert symbol_match
     assert symbol_match.group(1) != "!"
-    assert 'id="book-dialog-info"' in html
-    assert f">{symbol_match.group(1)}</button>" in html
+    assert 'id="media-grid"' in html
+    script = client.get("/static/js/media-app.js").get_data(as_text=True)
+    assert "dataset.bookInfoSymbol" in script
 
 
-def test_manual_book_form_offers_all_visible_metadata_fields(tmp_path):
+def test_moviepedia_frontend_no_longer_exposes_manual_book_form(tmp_path):
     app = make_app(tmp_path)
     add_user(app, "reader")
     client = app.test_client()
     assert login(client, "reader").status_code == 302
 
     html = client.get("/").get_data(as_text=True)
-    for field in (
-        "isbn",
-        "publisher",
-        "publish_date",
-        "page_count",
-        "language",
-        "physical_format",
-        "subtitle",
-        "original_title",
-        "description",
-        "subjects",
-    ):
-        assert f'name="{field}"' in html
+    assert 'id="media-grid"' in html
+    assert 'id="manual-form"' not in html
+    assert 'name="isbn"' not in html
 
 
 def test_five_character_password_is_allowed(tmp_path):
@@ -93,6 +84,7 @@ def test_private_routes_require_login(tmp_path):
     assert response.status_code == 302
     assert "/login" in response.headers["Location"]
     assert client.get("/api/books").status_code == 401
+    assert client.get("/api/media").status_code == 401
     assert client.get("/api/search?q=Dune").status_code == 401
     assert client.get("/health").status_code == 200
 

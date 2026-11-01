@@ -7,7 +7,7 @@ from .base import BookProvider, ProviderUnavailable
 
 class GoogleBooksProvider(BookProvider):
     API_URL = "https://www.googleapis.com/books/v1/volumes"
-    REQUEST_HEADERS = {"User-Agent": "Epiloguehouse/1.0 (personal reading manager)"}
+    REQUEST_HEADERS = {"User-Agent": "Moviepedia/1.0 (personal media manager)"}
 
     def __init__(self, api_key=None):
         self.api_key = str(api_key or "").strip() or None

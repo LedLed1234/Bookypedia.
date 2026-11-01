@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101512">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <meta name="description" content="Deine persönliche, lokale Leseverwaltung.">
-  <title>Epiloguehouse – Meine Leseliste</title>
+  <meta name="description" content="Deine persönliche Film- und Serienverwaltung.">
+  <title>Moviepedia – Filme &amp; Serien</title>
   <script>
     try {
       const isCapacitorAndroid = window.Capacitor?.getPlatform?.() === "android";
@@ -14,446 +14,193 @@
       const isMobileBrowser = navigator.userAgentData?.mobile === true
         || /Android|iPhone|iPod|Mobile/i.test(navigator.userAgent)
         || (navigator.maxTouchPoints > 1 && window.matchMedia("(max-width: 900px)").matches);
-      if (isCapacitorAndroid || isBookypediaAndroid) {
-        document.documentElement.classList.add("platform-android");
-      }
-      if (isCapacitorAndroid || isBookypediaAndroid || isMobileBrowser) {
-        document.documentElement.classList.add("platform-mobile");
-      }
-      const storedMobileTextSize = Number(localStorage.getItem("bookypedia-mobile-text-size"));
-      document.documentElement.dataset.mobileTextSize = String(
-        Number.isInteger(storedMobileTextSize) && storedMobileTextSize >= 1 && storedMobileTextSize <= 5
-          ? storedMobileTextSize
-          : 3
-      );
+      if (isCapacitorAndroid || isBookypediaAndroid) document.documentElement.classList.add("platform-android");
+      if (isCapacitorAndroid || isBookypediaAndroid || isMobileBrowser) document.documentElement.classList.add("platform-mobile");
     } catch (_error) {}
   </script>
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=2">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=2">
-  <script>
-    try {
-      const themeDefaultVersion = "blue-white-v1";
-      if (localStorage.getItem("bookypedia-theme-default-version") !== themeDefaultVersion) {
-        localStorage.setItem("bookypedia-theme", "blue-white");
-        localStorage.setItem("bookypedia-theme-default-version", themeDefaultVersion);
-      }
-      const savedTheme = localStorage.getItem("bookypedia-theme");
-      if (["red", "blue-white", "green", "brown", "cozy", "light"].includes(savedTheme)) {
-        document.documentElement.dataset.theme = savedTheme;
-      }
-    } catch (_error) {}
-  </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=52">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=60"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=62">
+  <script defer src="{{ url_for('static', filename='js/media-app.js') }}?v=9"></script>
 </head>
 <body>
   <header class="site-header">
     <div class="header-identity">
-      <a class="brand" href="#top" aria-label="Epiloguehouse Startseite">
+      <a class="brand" href="#top" aria-label="Moviepedia Startseite">
         <img class="brand-logo" src="{{ url_for('static', filename='icons/epiloguehouse-logo-header.png') }}" alt="">
-        <span class="brand-name">Epiloguehouse</span>
+        <span class="brand-name">Moviepedia</span>
       </a>
       <span class="header-greeting">Hello, {{ current_user['display_name'] }}</span>
     </div>
     <div class="header-actions">
       <div class="appearance-picker">
-        <button class="button button-secondary appearance-button" id="appearance-button" type="button" aria-haspopup="menu" aria-expanded="false">
-          <span aria-hidden="true">◐</span><span class="appearance-label">Appearance</span>
-        </button>
+        <button class="button button-secondary appearance-button" id="appearance-button" type="button" aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">◐</span><span class="appearance-label">Appearance</span></button>
         <div class="appearance-menu" id="appearance-menu" role="menu" aria-label="Farbschema auswählen" hidden>
           <p class="appearance-title">Farbschema</p>
-          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="red">
-            <span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#B85C5C"></i></span>
-            <span>Red</span><span class="theme-check" aria-hidden="true">✓</span>
-          </button>
-          <button class="theme-option" type="button" role="menuitemradio" aria-checked="true" data-theme-option="blue-white">
-            <span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#8392BD"></i></span>
-            <span>Blue-white</span><span class="theme-check" aria-hidden="true">✓</span>
-          </button>
-          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="green">
-            <span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#7FA38A"></i></span>
-            <span>Green</span><span class="theme-check" aria-hidden="true">✓</span>
-          </button>
-          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="brown">
-            <span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#B29B7E"></i></span>
-            <span>Brown</span><span class="theme-check" aria-hidden="true">✓</span>
-          </button>
-          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="cozy">
-            <span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#C58F7B"></i></span>
-            <span>Cozy</span><span class="theme-check" aria-hidden="true">✓</span>
-          </button>
-          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="light">
-            <span class="theme-swatches" aria-hidden="true"><i style="--swatch:#F3F1EB"></i><i style="--swatch:#EAEEE8"></i><i style="--swatch:#DFE6DF"></i><i style="--swatch:#5F846A"></i></span>
-            <span>Light</span><span class="theme-check" aria-hidden="true">✓</span>
-          </button>
+          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="red"><span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#B85C5C"></i></span><span>Red</span><span class="theme-check" aria-hidden="true">✓</span></button>
+          <button class="theme-option" type="button" role="menuitemradio" aria-checked="true" data-theme-option="blue-white"><span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#8392BD"></i></span><span>Blue-white</span><span class="theme-check" aria-hidden="true">✓</span></button>
+          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="green"><span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#7FA38A"></i></span><span>Green</span><span class="theme-check" aria-hidden="true">✓</span></button>
+          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="brown"><span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#B29B7E"></i></span><span>Brown</span><span class="theme-check" aria-hidden="true">✓</span></button>
+          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="cozy"><span class="theme-swatches" aria-hidden="true"><i style="--swatch:#101512"></i><i style="--swatch:#171F1B"></i><i style="--swatch:#202A24"></i><i style="--swatch:#C58F7B"></i></span><span>Cozy</span><span class="theme-check" aria-hidden="true">✓</span></button>
+          <button class="theme-option" type="button" role="menuitemradio" aria-checked="false" data-theme-option="light"><span class="theme-swatches" aria-hidden="true"><i style="--swatch:#F3F1EB"></i><i style="--swatch:#EAEEE8"></i><i style="--swatch:#DFE6DF"></i><i style="--swatch:#5F846A"></i></span><span>Light</span><span class="theme-check" aria-hidden="true">✓</span></button>
         </div>
       </div>
-      <button class="button button-secondary" id="open-manual" type="button">
-        <span aria-hidden="true">＋</span> Buch
-      </button>
-      <button class="button button-secondary settings-button" id="open-settings" type="button">
-        <span aria-hidden="true">⚙</span><span class="settings-label">Settings</span>
-      </button>
+      <button class="button button-secondary settings-button" id="open-settings" type="button"><span aria-hidden="true">⚙</span><span class="settings-label">Settings</span></button>
     </div>
   </header>
 
   <main id="top" class="app-shell">
     <section class="search-home" aria-labelledby="hero-title">
-      <h1 id="hero-title">Reading Library</h1>
+      <h1 id="hero-title">Movies &amp; TV</h1>
       <div class="search-box">
         <form class="search-form" id="search-form" role="search">
-          <label class="sr-only" for="search-input">Bücher suchen</label>
+          <label class="sr-only" for="search-input">Filme und Serien suchen</label>
           <span class="search-icon" aria-hidden="true">⌕</span>
-          <input id="search-input" name="q" type="search" minlength="2" maxlength="{{ search_max_length }}" autocomplete="off" placeholder="Titel, Autor oder ISBN …" aria-controls="search-suggestions" aria-expanded="false" required>
+          <input id="search-input" name="q" type="search" minlength="2" maxlength="{{ search_max_length }}" autocomplete="off" placeholder="Film oder Serie suchen …" required>
           <button class="button button-primary" type="submit">Suchen</button>
         </form>
-        <div class="search-suggestions" id="search-suggestions" aria-label="Buchvorschläge" hidden></div>
       </div>
     </section>
 
-    <nav class="status-tabs" aria-label="Meine Bücher">
-        <button class="status-tab active" data-filter="all" aria-pressed="true">
-          <span>Alle</span><strong id="count-all">0</strong>
-        </button>
-        <button class="status-tab" data-filter="unread" aria-pressed="false">
-          <span>Ungelesen</span><strong id="count-unread">0</strong>
-        </button>
-        <button class="status-tab" data-filter="reading" aria-pressed="false">
-          <span>Lese ich</span><strong id="count-reading">0</strong>
-        </button>
-        <button class="status-tab" data-filter="read" aria-pressed="false">
-          <span>Gelesen</span><strong id="count-read">0</strong>
-        </button>
-        <button class="status-tab" data-filter="want_to_read" aria-pressed="false">
-          <span>Wunschliste</span><strong id="count-want_to_read">0</strong>
-        </button>
-        <button class="status-tab" data-filter="owned" aria-pressed="false">
-          <span>Im Besitz</span><strong id="count-owned">0</strong>
-        </button>
+    <nav class="status-tabs media-status-tabs" aria-label="Meine Filme und Serien">
+      <button class="status-tab active" data-filter="all" aria-pressed="true"><span>Alle</span><strong id="count-all">0</strong></button>
+      <button class="status-tab" data-filter="watchlist" aria-pressed="false"><span>Watchlist</span><strong id="count-watchlist">0</strong></button>
+      <button class="status-tab" data-filter="watching" aria-pressed="false"><span>Watching</span><strong id="count-watching">0</strong></button>
+      <button class="status-tab" data-filter="completed" aria-pressed="false"><span>Completed</span><strong id="count-completed">0</strong></button>
+      <button class="status-tab" data-filter="dropped" aria-pressed="false"><span>Dropped</span><strong id="count-dropped">0</strong></button>
     </nav>
 
     <section class="search-panel" id="search-panel" aria-labelledby="search-heading" hidden>
-      <div class="section-heading">
-        <h2 id="search-heading">Suchergebnisse</h2>
-        <button class="text-button" id="close-search" type="button">Schließen</button>
-      </div>
+      <div class="section-heading"><h2 id="search-heading">Suchergebnisse</h2><button class="text-button" id="close-search" type="button">Schließen</button></div>
       <div class="book-grid search-grid" id="search-results"></div>
+      <p class="tmdb-attribution"><a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer">TMDB</a> · This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
     </section>
 
     <section class="library" aria-labelledby="library-heading">
       <div class="section-heading collection-heading">
-        <h2 id="library-heading">Alle Bücher</h2>
+        <h2 id="library-heading">Alle Titel</h2>
         <div class="collection-tools">
-          <div class="collection-action-buttons">
-            <div class="sort-picker">
-              <button class="button button-secondary sort-button" id="sort-button" type="button" aria-haspopup="menu" aria-expanded="false">
-                <span aria-hidden="true">↕</span><span id="sort-button-label">Zuletzt hinzugefügt</span>
-              </button>
-              <div class="sort-menu" id="sort-menu" role="menu" aria-label="Bibliothek sortieren" hidden>
-                <button type="button" role="menuitemradio" aria-checked="true" data-sort-option="added_desc">Hinzufügedatum: Neu → Alt</button>
-                <button type="button" role="menuitemradio" aria-checked="false" data-sort-option="added_asc">Hinzufügedatum: Alt → Neu</button>
-                <button type="button" role="menuitemradio" aria-checked="false" data-sort-option="rating_desc">Bewertung: Hoch → Niedrig</button>
-                <button type="button" role="menuitemradio" aria-checked="false" data-sort-option="rating_asc">Bewertung: Niedrig → Hoch</button>
-                <button type="button" role="menuitemradio" aria-checked="false" data-sort-option="title_asc">Titel: A → Z</button>
-                <button type="button" role="menuitemradio" aria-checked="false" data-sort-option="title_desc">Titel: Z → A</button>
-              </div>
+          <div class="media-type-picker">
+            <button class="button button-secondary" id="media-type-button" type="button" aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">▦</span><span id="media-type-button-label">Alle Titel</span></button>
+            <div class="sort-menu media-type-menu" id="media-type-menu" role="menu" aria-label="Nach Medientyp filtern" hidden>
+              <button type="button" role="menuitemradio" aria-checked="true" data-media-type-option="all">Alle Titel</button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-media-type-option="movie">Filme</button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-media-type-option="tv">Serien</button>
             </div>
-            <button class="button button-secondary grouping-button" id="grouping-button" type="button" aria-pressed="false">
-              <span aria-hidden="true">▦</span><span id="grouping-button-label">Reihen gruppieren</span>
-            </button>
           </div>
-          <p id="view-count" class="view-count">0 Bücher</p>
+          <button class="button button-secondary season-visibility-button" id="season-visibility-button" type="button" aria-pressed="false" title="Gespeicherte Staffeln in der Auflistung anzeigen"><span aria-hidden="true">▤</span><span id="season-visibility-label">Staffeln</span></button>
+          <div class="sort-picker">
+            <button class="button button-secondary sort-button" id="sort-button" type="button" aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">↕</span><span id="sort-button-label">Zuletzt hinzugefügt</span></button>
+            <div class="sort-menu" id="sort-menu" role="menu" aria-label="Sammlung sortieren" hidden>
+              <button type="button" role="menuitemradio" aria-checked="true" data-sort-option="added_desc">Hinzufügedatum: Neu → Alt</button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-sort-option="added_asc">Hinzufügedatum: Alt → Neu</button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-sort-option="title_asc">Titel: A → Z</button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-sort-option="title_desc">Titel: Z → A</button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-sort-option="rating_desc">Bewertung: Hoch → Niedrig</button>
+              <button type="button" role="menuitemradio" aria-checked="false" data-sort-option="rating_asc">Bewertung: Niedrig → Hoch</button>
+            </div>
+          </div>
+          <p id="view-count" class="view-count">0 Titel</p>
         </div>
       </div>
-
       <div id="library-loading" class="loading-state">Deine Sammlung wird geladen …</div>
-      <div class="book-grid" id="book-grid" aria-live="polite"></div>
+      <div class="book-grid media-grid" id="media-grid" aria-live="polite"></div>
       <div class="empty-state" id="empty-state" hidden>
-        <h3 id="empty-title">Hier ist noch nichts.</h3>
-        <p id="empty-copy">Suche oben nach einem Buch und füge es dieser Liste hinzu.</p>
-        <button class="button button-primary" id="empty-search" type="button">Buch suchen</button>
+        <h3 id="empty-title">Deine Sammlung ist noch leer.</h3>
+        <p id="empty-copy">Suche oben nach einem Film oder einer Serie und füge den Titel deiner Watchlist hinzu.</p>
+        <button class="button button-primary" id="empty-search" type="button">Titel suchen</button>
       </div>
     </section>
   </main>
 
+  <dialog id="media-preview-dialog" class="dialog media-preview-dialog" aria-labelledby="media-preview-title">
+    <div class="media-preview-shell">
+      <button class="icon-button dialog-close media-preview-close" type="button" aria-label="Vorschau schließen">×</button>
+      <div class="media-preview-backdrop" id="media-preview-backdrop"></div>
+      <div class="media-preview-content">
+        <div class="media-preview-poster" id="media-preview-poster"></div>
+        <div class="media-preview-copy">
+          <span class="media-type-badge" id="media-preview-type"></span>
+          <h2 id="media-preview-title"></h2>
+          <p class="media-preview-meta" id="media-preview-meta"></p>
+          <p class="media-rating" id="media-preview-rating"></p>
+          <p class="media-preview-overview" id="media-preview-overview"></p>
+          <div class="media-preview-actions">
+            <button class="button button-primary" id="media-preview-add" type="button">＋ Watchlist</button>
+            <button class="button button-secondary dialog-close" type="button">Schließen</button>
+          </div>
+        </div>
+      </div>
+      <section class="media-collection-section" id="media-collection-section" aria-labelledby="media-collection-title" hidden>
+        <div class="media-collection-heading">
+          <div><p class="eyebrow">Filmreihe</p><h3 id="media-collection-title">Weitere Teile</h3></div>
+          <p id="media-collection-count"></p>
+        </div>
+        <p class="media-collection-status" id="media-collection-status"></p>
+        <div class="media-collection-list" id="media-collection-list"></div>
+      </section>
+      <section class="media-series-section" id="media-series-section" aria-labelledby="media-series-title" style="--season-tabs-per-row: {{ season_tabs_per_row }}" hidden>
+        <div class="media-series-heading">
+          <div><p class="eyebrow">Serienübersicht</p><h3 id="media-series-title">Staffeln</h3></div>
+          <p id="media-series-count"></p>
+        </div>
+        <p class="media-series-status" id="media-series-status"></p>
+        <div class="media-season-tabs" id="media-season-tabs" role="tablist" aria-label="Staffeln"></div>
+        <section class="media-episodes-panel" id="media-episodes-panel" aria-labelledby="media-episodes-title" hidden>
+          <div class="media-episodes-heading">
+            <h4 id="media-episodes-title">Episoden</h4>
+            <div class="media-episodes-tools"><p id="media-episodes-count"></p><button class="button button-secondary media-season-add" id="media-season-add" type="button">＋ Staffel hinzufügen</button></div>
+          </div>
+          <p class="media-episodes-status" id="media-episodes-status"></p>
+          <div class="media-episodes-list" id="media-episodes-list" tabindex="0" aria-label="Episodenliste"></div>
+        </section>
+      </section>
+    </div>
+  </dialog>
+
+  <dialog id="media-rating-dialog" class="dialog media-rating-dialog" aria-labelledby="media-rating-title">
+    <form id="media-rating-form" class="dialog-shell">
+      <div class="dialog-header"><div><p class="eyebrow">Deine Meinung</p><h2 id="media-rating-title">Titel bewerten</h2></div><button class="icon-button dialog-close" type="button" aria-label="Bewertung schließen">×</button></div>
+      <fieldset class="rating-field">
+        <legend>Deine Bewertung</legend>
+        <div class="stars" role="radiogroup" aria-label="Bewertung von 1 bis 5 Sternen">
+          <input id="media-rating-5" name="media-rating" type="radio" value="5"><label for="media-rating-5" title="5 Sterne">★</label>
+          <input id="media-rating-4" name="media-rating" type="radio" value="4"><label for="media-rating-4" title="4 Sterne">★</label>
+          <input id="media-rating-3" name="media-rating" type="radio" value="3"><label for="media-rating-3" title="3 Sterne">★</label>
+          <input id="media-rating-2" name="media-rating" type="radio" value="2"><label for="media-rating-2" title="2 Sterne">★</label>
+          <input id="media-rating-1" name="media-rating" type="radio" value="1"><label for="media-rating-1" title="1 Stern">★</label>
+        </div>
+        <button class="text-button clear-rating" id="clear-media-rating" type="button">Bewertung entfernen</button>
+      </fieldset>
+      <label for="media-review">Notiz oder Review (optional)<textarea id="media-review" rows="5" maxlength="{{ review_max_length }}" placeholder="Was hat dir gefallen – oder nicht?"></textarea><small class="review-character-count" id="media-review-count">0 / {{ review_max_length }}</small></label>
+      <div class="dialog-actions"><button class="button button-secondary dialog-close" type="button">Abbrechen</button><button class="button button-primary" id="save-media-rating" type="submit">Bewertung speichern</button></div>
+    </form>
+  </dialog>
+
   <dialog id="settings-dialog" class="dialog settings-dialog" aria-labelledby="settings-dialog-title">
     <div class="dialog-shell settings-dialog-shell">
-      <div class="dialog-header">
-        <div><p class="eyebrow">Epiloguehouse anpassen</p><h2 id="settings-dialog-title">Settings</h2></div>
-        <button class="icon-button dialog-close" type="button" aria-label="Settings schließen">×</button>
-      </div>
+      <div class="dialog-header"><div><p class="eyebrow">Moviepedia anpassen</p><h2 id="settings-dialog-title">Settings</h2></div><button class="icon-button dialog-close" type="button" aria-label="Settings schließen">×</button></div>
       <div class="settings-list">
-        <div class="settings-account">
-          <span class="settings-account-avatar" aria-hidden="true">{{ current_user['display_name'][0]|upper }}</span>
-          <span><strong>{{ current_user['display_name'] }}</strong><small>@{{ current_user['username'] }}</small></span>
-        </div>
-        <label class="settings-item" for="settings-theme">
-          <span><strong>Appearance</strong><small>Farbschema der Oberfläche</small></span>
-          <select id="settings-theme">
-            <option>Wird geladen …</option>
-          </select>
-        </label>
-        <label class="settings-item" for="settings-search-limit">
-          <span><strong>Suchergebnisse</strong><small>Anzahl der Bücher in der großen Ergebnisansicht</small></span>
-          <select id="settings-search-limit">
-            <option>Wird geladen …</option>
-          </select>
-        </label>
-        <label class="settings-item" for="settings-date-format">
-          <span><strong>Datumsformat</strong><small>Darstellung von Veröffentlichungs- und Verlaufsdaten</small></span>
-          <select id="settings-date-format">
-            <option>Wird geladen …</option>
-          </select>
-        </label>
-        <label class="settings-item" for="settings-primary-provider">
-          <span><strong>Hauptkatalog</strong><small>Wird bei jeder Buchsuche zuerst verwendet</small></span>
-          <select id="settings-primary-provider">
-            <option>Wird geladen …</option>
-          </select>
-        </label>
-        <label class="settings-item" for="settings-fallback-provider">
-          <span><strong>Fallback-Katalog</strong><small>Wird nur ohne guten Haupttreffer verwendet</small></span>
-          <select id="settings-fallback-provider">
-            <option>Wird geladen …</option>
-          </select>
-        </label>
-        <label class="settings-item" for="settings-start-view">
-          <span><strong>Startansicht</strong><small>Diese Liste wird beim Öffnen zuerst angezeigt</small></span>
-          <select id="settings-start-view">
-            <option>Wird geladen …</option>
-          </select>
-        </label>
-        <label class="settings-item mobile-text-size-setting" for="settings-mobile-text-size">
-          <span><strong>Textgröße</strong><small>Schrift und Markenbereich auf diesem Mobilgerät</small></span>
-          <select id="settings-mobile-text-size">
-            <option>Wird geladen …</option>
-          </select>
-        </label>
+        <div class="settings-account"><span class="settings-account-avatar" aria-hidden="true">{{ current_user['display_name'][0]|upper }}</span><span><strong>{{ current_user['display_name'] }}</strong><small>@{{ current_user['username'] }}</small></span></div>
+        <label class="settings-item" for="settings-theme"><span><strong>Appearance</strong><small>Farbschema der Oberfläche</small></span><select id="settings-theme"></select></label>
+        <label class="settings-item" for="settings-search-limit"><span><strong>Suchergebnisse</strong><small>Anzahl der TMDB-Treffer</small></span><select id="settings-search-limit"></select></label>
+        <label class="settings-item" for="settings-start-view"><span><strong>Startansicht</strong><small>Diese Liste wird beim Öffnen zuerst angezeigt</small></span><select id="settings-start-view"></select></label>
       </div>
-      <div class="account-actions">
-        <a class="button button-secondary" href="{{ url_for('auth.change_password') }}">Passwort ändern</a>
-        <form action="{{ url_for('auth.logout') }}" method="post">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="button button-secondary" type="submit">Abmelden</button>
-        </form>
-      </div>
-      <p class="settings-version" title="Build-Version">
-        <span>Version</span><code>{{ build_version }}</code>
-      </p>
+      <p class="tmdb-attribution settings-attribution"><a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer">TMDB</a> · This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+      <p class="settings-version">Version {{ build_version }}</p>
+      <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-secondary settings-logout" type="submit">Abmelden</button></form>
     </div>
   </dialog>
 
-  <dialog id="manual-dialog" class="dialog manual-dialog">
-    <form method="dialog" class="dialog-shell manual-dialog-shell" id="manual-form">
-      <div class="dialog-header">
-        <div><p class="eyebrow">Ohne Suchergebnis</p><h2>Buch selbst anlegen</h2></div>
-        <button class="icon-button dialog-close" type="button" aria-label="Dialog schließen">×</button>
-      </div>
-      <div class="manual-form-grid">
-        <label class="manual-field-wide"><span>Titel <span aria-hidden="true">*</span></span>
-          <input name="title" required maxlength="{{ book_title_max_length }}" autocomplete="off">
-        </label>
-        <label>Autor oder Autorin
-          <input name="authors" maxlength="{{ book_authors_max_length }}" autocomplete="off" placeholder="z. B. Ursula K. Le Guin">
-        </label>
-        <label>ISBN
-          <input name="isbn" autocomplete="off" placeholder="optional, 10 oder 13 Stellen">
-        </label>
-        <label>Liste
-          <select name="status">
-            <option value="unread">Ungelesen (im Besitz)</option>
-            <option value="reading">Lese ich</option>
-            <option value="read">Gelesen</option>
-            <option value="want_to_read">Wunschliste</option>
-          </select>
-        </label>
-      </div>
-      <section class="manual-metadata" aria-labelledby="manual-metadata-heading">
-        <div class="manual-section-heading">
-          <h3 id="manual-metadata-heading">Weitere Buchinformationen</h3>
-          <p>Alle Angaben sind optional.</p>
-        </div>
-        <div class="manual-form-grid">
-          <label>Untertitel
-            <input name="subtitle" maxlength="1000" autocomplete="off">
-          </label>
-          <label>Originaltitel
-            <input name="original_title" maxlength="1000" autocomplete="off">
-          </label>
-          <label>Verlag
-            <input name="publisher" maxlength="1000" autocomplete="off">
-          </label>
-          <label>Erscheinungsdatum
-            <input name="publish_date" maxlength="250" autocomplete="off" placeholder="z. B. 15. Oktober 2024">
-          </label>
-          <label>Seitenzahl
-            <input name="page_count" type="number" min="1" step="1" inputmode="numeric" placeholder="z. B. 416">
-          </label>
-          <label>Sprache
-            <input name="language" maxlength="100" autocomplete="off" placeholder="z. B. Deutsch">
-          </label>
-          <label>Format
-            <input name="physical_format" maxlength="250" autocomplete="off" placeholder="z. B. Hardcover">
-          </label>
-          <label class="manual-field-wide">Themen
-            <input name="subjects" maxlength="1000" autocomplete="off" placeholder="Kommagetrennt, z. B. Fantasy, Abenteuer">
-          </label>
-          <label class="manual-field-wide">Beschreibung
-            <textarea name="description" rows="5" maxlength="50000" placeholder="Worum geht es in diesem Buch?"></textarea>
-          </label>
-        </div>
-      </section>
-      <div class="dialog-actions">
-        <button class="button button-secondary dialog-close" type="button">Abbrechen</button>
-        <button class="button button-primary" type="submit">Buch speichern</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="review-dialog" class="dialog">
-    <form method="dialog" class="dialog-shell" id="review-form">
-      <input type="hidden" name="book_id">
-      <div class="dialog-header">
-        <div><p class="eyebrow">Deine Notizen</p><h2 id="review-book-title">Buch bewerten</h2></div>
-        <button class="icon-button dialog-close" type="button" aria-label="Dialog schließen">×</button>
-      </div>
-      <fieldset class="rating-field">
-        <legend>Sternebewertung</legend>
-        <div class="stars" aria-label="Bewertung von 1 bis 5 Sternen">
-          <input type="radio" id="star-5" name="rating" value="5" aria-label="5 Sterne"><label for="star-5" title="5 Sterne">★</label>
-          <input type="radio" id="star-4" name="rating" value="4" aria-label="4 Sterne"><label for="star-4" title="4 Sterne">★</label>
-          <input type="radio" id="star-3" name="rating" value="3" aria-label="3 Sterne"><label for="star-3" title="3 Sterne">★</label>
-          <input type="radio" id="star-2" name="rating" value="2" aria-label="2 Sterne"><label for="star-2" title="2 Sterne">★</label>
-          <input type="radio" id="star-1" name="rating" value="1" aria-label="1 Stern"><label for="star-1" title="1 Stern">★</label>
-        </div>
-        <button class="text-button clear-rating" type="button">Sterne entfernen</button>
-      </fieldset>
-      <label>Bewertungstext
-        <textarea name="review" rows="6" maxlength="{{ review_max_length }}" placeholder="Was möchtest du über dieses Buch festhalten?"></textarea>
-        <small class="review-character-count" id="review-character-count">0 / {{ review_max_length }} Zeichen</small>
-      </label>
-      <p class="review-status-note">Beim Speichern einer Bewertung wird das Buch automatisch zu „Gelesen“ verschoben.</p>
-      <div class="dialog-actions split-actions">
-        <button class="text-button danger" id="delete-review" type="button">Bewertung löschen</button>
-        <div>
-          <button class="button button-secondary dialog-close" type="button">Abbrechen</button>
-          <button class="button button-primary" type="submit">Speichern</button>
-        </div>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="review-reader-dialog" class="dialog review-reader-dialog" aria-labelledby="review-reader-title">
-    <div class="dialog-shell review-reader-shell">
-      <div class="dialog-header">
-        <div><p class="eyebrow">Deine Bewertung</p><h2 id="review-reader-title">Bewertung</h2></div>
-        <button class="icon-button dialog-close" type="button" aria-label="Bewertung schließen">×</button>
-      </div>
-      <p class="review-reader-author" id="review-reader-author"></p>
-      <p class="review-reader-rating" id="review-reader-rating"></p>
-      <p class="review-reader-copy" id="review-reader-copy"></p>
-    </div>
-  </dialog>
-
-  <dialog id="collection-dialog" class="dialog collection-dialog" aria-labelledby="collection-dialog-title">
-    <div class="dialog-shell collection-dialog-shell">
-      <div class="dialog-header">
-        <div>
-          <p class="eyebrow">Deine Reihe</p>
-          <h2 id="collection-dialog-title">Buchreihe</h2>
-          <p class="book-dialog-author" id="collection-dialog-count"></p>
-        </div>
-        <button class="icon-button dialog-close" type="button" aria-label="Dialog schließen">×</button>
-      </div>
-      <div class="collection-book-list" id="collection-book-list"></div>
-      <section class="collection-other-series" id="collection-other-series" hidden>
-        <button class="collection-other-toggle" id="collection-other-toggle" type="button" aria-controls="collection-other-list" aria-expanded="false">
-          <span id="collection-other-toggle-label">Weitere Bände anzeigen</span>
-          <span class="collection-other-chevron" aria-hidden="true">⌄</span>
-        </button>
-        <div class="collection-book-list collection-other-list" id="collection-other-list" hidden></div>
-      </section>
-      <div class="dialog-actions">
-        <button class="button button-secondary dialog-close" type="button">Schließen</button>
-      </div>
-    </div>
-  </dialog>
-
-  <dialog id="book-dialog" class="dialog book-dialog" aria-labelledby="book-dialog-title">
-    <div class="dialog-shell book-dialog-shell">
-      <div class="dialog-header">
-        <div>
-          <p class="eyebrow" id="book-dialog-kicker">Buchdetails</p>
-          <h2 id="book-dialog-title">Buch</h2>
-          <p class="book-dialog-author" id="book-dialog-author"></p>
-          <p class="book-dialog-original" id="book-dialog-original" hidden></p>
-        </div>
-        <div class="book-dialog-header-actions">
-          <button class="icon-button book-dialog-info-button" id="book-dialog-info" type="button" aria-label="Weitere Buchinformationen anzeigen" title="Weitere Buchinformationen">{{ '🧸!' if current_user['username']|lower == 'carli' else '!' }}</button>
-          <button class="icon-button dialog-close" type="button" aria-label="Dialog schließen">×</button>
-        </div>
-      </div>
-      <div class="book-dialog-view" id="book-dialog-main-view">
-        <section class="reading-history" id="reading-history" aria-labelledby="reading-history-heading" hidden>
-          <div class="reading-history-heading-row">
-            <p class="eyebrow" id="reading-history-heading">Leseverlauf</p>
-            <button class="reading-history-toggle" id="reading-history-toggle" type="button" aria-controls="reading-history-list" aria-expanded="false" hidden>
-              <span>Ausklappen</span><span class="reading-history-chevron" aria-hidden="true">⌄</span>
-            </button>
-          </div>
-          <div class="reading-history-list" id="reading-history-list"></div>
-        </section>
-        <section class="series-section" aria-labelledby="series-heading">
-          <div class="series-heading-row">
-            <div><p class="eyebrow">Reihe</p><h3 id="series-heading">Reiheninformationen</h3></div>
-            <span class="series-position" id="series-position" hidden></span>
-          </div>
-          <div class="series-content" id="series-content" aria-live="polite"></div>
-          <p class="series-note" id="series-note"></p>
-        </section>
-      </div>
-      <div class="book-dialog-view book-info-view" id="book-dialog-info-view" hidden>
-        <div class="book-info-status" id="book-info-status" aria-live="polite"></div>
-        <dl class="book-info-grid" id="book-info-grid"></dl>
-        <section class="book-description" id="book-description" hidden>
-          <p class="eyebrow">Beschreibung</p>
-          <p id="book-description-copy"></p>
-          <button class="text-button book-description-toggle" id="book-description-toggle" type="button" aria-controls="book-description-copy" aria-expanded="false">Mehr anzeigen</button>
-        </section>
-        <section class="book-subjects" id="book-subjects" hidden>
-          <p class="eyebrow">Themen</p>
-          <div class="book-subject-list" id="book-subject-list"></div>
-        </section>
-        <div class="dialog-actions book-info-actions">
-          <button class="button button-secondary" id="book-info-back" type="button">← Zurück zu Buchdetails</button>
-        </div>
-        <p class="book-info-source" id="book-info-source"></p>
-      </div>
-    </div>
-  </dialog>
-
-  <dialog id="delete-dialog" class="dialog delete-dialog" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-copy">
-    <form method="dialog" class="dialog-shell delete-dialog-shell">
-      <div class="dialog-header">
-        <div>
-          <p class="eyebrow">Aus Sammlung entfernen</p>
-          <h2 id="delete-dialog-title">Buch entfernen?</h2>
-        </div>
-        <button class="icon-button dialog-close" type="button" aria-label="Dialog schließen">×</button>
-      </div>
-      <div class="delete-dialog-note">
-        <span class="delete-dialog-symbol" aria-hidden="true">!</span>
-        <p id="delete-dialog-copy">Lesestatus, Bewertung und Notizen werden ebenfalls gelöscht. Diese Aktion lässt sich nicht rückgängig machen.</p>
-      </div>
-      <div class="dialog-actions delete-dialog-actions">
-        <button class="button button-secondary dialog-close" type="button">Abbrechen</button>
-        <button class="button button-danger" id="confirm-delete" type="button">Buch entfernen</button>
-      </div>
+  <dialog id="delete-dialog" class="dialog" aria-labelledby="delete-dialog-title">
+    <form method="dialog" class="dialog-shell">
+      <div class="dialog-header"><div><p class="eyebrow">Aus Sammlung entfernen</p><h2 id="delete-dialog-title">Titel entfernen?</h2></div><button class="icon-button dialog-close" value="cancel" aria-label="Dialog schließen">×</button></div>
+      <p class="dialog-copy">Der Titel und sein Status werden aus deiner Moviepedia-Sammlung entfernt.</p>
+      <div class="dialog-actions"><button class="button button-secondary dialog-close" value="cancel">Abbrechen</button><button class="button button-danger" id="confirm-delete" type="button">Titel entfernen</button></div>
     </form>
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>
-

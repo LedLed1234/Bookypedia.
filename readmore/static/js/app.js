@@ -979,6 +979,20 @@ async function cachedBookSearch(query, signal, suggestions = false) {
   return payload.results;
 }
 
+async function cachedMediaSearch(query, signal) {
+  const resultLimit = state.searchResultLimit;
+  const key = `tmdb:search:${resultLimit}:${normalizeSearch(query)}`;
+  const cached = searchCache.get(key);
+  if (cached && Date.now() - cached.savedAt < SEARCH_CACHE_TTL) return cached.results;
+  const payload = await api(
+    `/api/media/search?q=${encodeURIComponent(query)}&limit=${resultLimit}`,
+    { signal },
+  );
+  if (payload.results.length) searchCache.set(key, { results: payload.results, savedAt: Date.now() });
+  else searchCache.delete(key);
+  return payload.results;
+}
+
 function queueSuggestionSearch() {
   const query = searchInput.value.trim();
   clearTimeout(suggestionTimer);
@@ -1950,9 +1964,9 @@ function renderSearchResults() {
     const message = document.createElement("div");
     message.className = "empty-state";
     const heading = document.createElement("h3");
-    heading.textContent = "Keine passenden Bücher gefunden";
+    heading.textContent = "Keine passenden Filme oder Serien gefunden";
     const copy = document.createElement("p");
-    copy.textContent = "Die Buchkataloge liefern manchmal kurzzeitig keine Treffer. Versuche es erneut oder lege das Buch selbst an.";
+    copy.textContent = "TMDB hat für diesen Suchbegriff keine passenden Filme oder Serien geliefert.";
     message.append(heading, copy);
     const actions = document.createElement("div");
     actions.className = "empty-state-actions";
@@ -1961,86 +1975,58 @@ function renderSearchResults() {
     retry.type = "button";
     retry.textContent = "Noch einmal suchen";
     retry.addEventListener("click", () => executeSearch(state.lastSearchQuery));
-    const manual = document.createElement("button");
-    manual.className = "button button-primary";
-    manual.type = "button";
-    manual.textContent = "Buch selbst anlegen";
-    manual.addEventListener("click", () => manualDialog.showModal());
-    actions.append(retry, manual);
+    actions.append(retry);
     message.append(actions);
     searchResults.append(message);
     return;
   }
-  state.searchResults.forEach((book) => searchResults.append(searchCard(book)));
+  state.searchResults.forEach((media) => searchResults.append(mediaSearchCard(media)));
 }
 
-function searchCard(book) {
+function mediaSearchCard(media) {
   const article = document.createElement("article");
-  article.className = "book-card search-card";
-  const cover = coverElement(book);
-  cover.classList.add("book-detail-trigger");
-  cover.tabIndex = 0;
-  cover.setAttribute("role", "button");
-  cover.setAttribute("aria-label", `Details und Reihe von ${book.title} anzeigen`);
-  cover.addEventListener("click", () => openBookDetails(book));
-  cover.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      openBookDetails(book);
-    }
-  });
+  article.className = "book-card search-card media-search-card";
+  article.dataset.tmdbId = String(media.tmdb_id);
+  article.dataset.mediaType = media.media_type;
+  const cover = coverElement(media);
+  cover.classList.add("media-poster-wrap");
   article.append(cover);
   const body = document.createElement("div");
   body.className = "book-body";
   const meta = document.createElement("div");
   meta.className = "book-meta";
+  const mediaType = document.createElement("span");
+  mediaType.className = "media-type-badge";
+  mediaType.textContent = media.media_type === "movie" ? "Film" : "Serie";
   const title = document.createElement("h3");
   title.className = "book-title";
-  const titleButton = document.createElement("button");
-  titleButton.className = "book-title-link";
-  titleButton.type = "button";
-  titleButton.textContent = book.title;
-  titleButton.setAttribute("aria-label", `Details und Reihe von ${book.title} anzeigen`);
-  titleButton.addEventListener("click", () => openBookDetails(book));
-  title.append(titleButton);
-  const author = document.createElement("p");
-  author.className = "book-author";
-  author.textContent = authorText(book);
-  meta.append(title, author);
-  const publicationDetails = book._metadataHydrationPending
-    ? ["Buchdaten werden geprüft …"]
-    : [
-      publicationDateText(book, true),
-      pageCountText(book, "Seitenzahl unbekannt"),
-    ].filter(Boolean);
-  if (publicationDetails.length) {
-    const year = document.createElement("p");
-    year.className = "book-year";
-    year.textContent = publicationDetails.join(" · ");
-    meta.append(year);
+  title.textContent = media.title;
+  meta.append(mediaType, title);
+  const details = [
+    media.release_year,
+    media.original_title ? `Original: ${media.original_title}` : null,
+  ].filter(Boolean);
+  if (details.length) {
+    const detailLine = document.createElement("p");
+    detailLine.className = "book-year";
+    detailLine.textContent = details.join(" · ");
+    meta.append(detailLine);
   }
-  const heading = document.createElement("div");
-  heading.className = "book-card-heading";
-  heading.append(meta, createBookInfoButton(book));
-  body.append(heading);
-
-  if (isInCollection(book)) {
-    const added = document.createElement("div");
-    added.className = "added-label";
-    added.textContent = "✓ Bereits gespeichert";
-    body.append(added);
-  } else {
-    const select = statusSelect("want_to_read");
-    const add = document.createElement("button");
-    add.className = "button button-primary";
-    add.type = "button";
-    add.textContent = "Hinzufügen";
-    add.addEventListener("click", () => addSearchBook(book, select.value, add));
-    const actions = document.createElement("div");
-    actions.className = "card-actions";
-    actions.append(select, add);
-    body.append(actions);
+  if (media.vote_count > 0 && Number.isFinite(media.vote_average)) {
+    const rating = document.createElement("p");
+    rating.className = "media-rating";
+    rating.textContent = `★ ${media.vote_average.toFixed(1)}/10 · ${media.vote_count.toLocaleString("de-DE")} Stimmen`;
+    meta.append(rating);
   }
+  body.append(meta);
+  const overview = document.createElement("p");
+  overview.className = "media-overview";
+  overview.textContent = media.overview || "Für diesen Titel ist noch keine deutsche Beschreibung verfügbar.";
+  body.append(overview);
+  const saveNotice = document.createElement("div");
+  saveNotice.className = "media-save-notice";
+  saveNotice.textContent = "Speichern folgt im nächsten Schritt";
+  body.append(saveNotice);
   article.append(body);
   return article;
 }
@@ -2198,9 +2184,8 @@ async function executeSearch(query) {
     showToast(`Die Suche darf höchstens ${searchInput.maxLength} Zeichen lang sein.`, true);
     return;
   }
-  const hydrationGeneration = ++searchHydrationGeneration;
-  const providerQuery = canonicalSearchQuery(query);
-  state.lastSearchQuery = providerQuery;
+  const providerQuery = query;
+  state.lastSearchQuery = query;
   clearTimeout(suggestionTimer);
   suggestionController?.abort();
   hideSuggestions();
@@ -2210,18 +2195,13 @@ async function executeSearch(query) {
   searchPanel.hidden = false;
   const loadingState = document.createElement("div");
   loadingState.className = "loading-state";
-  loadingState.textContent = "Buchkatalog wird durchsucht …";
+  loadingState.textContent = "TMDB wird nach Filmen und Serien durchsucht …";
   searchResults.replaceChildren(loadingState);
   searchPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   try {
-    const results = await cachedBookSearch(providerQuery);
-    state.searchResults = results.map((book) => {
-      const enriched = enrichKnownBookMetadata(book);
-      enriched._metadataHydrationPending = Boolean(enriched.provider_book_id);
-      return enriched;
-    });
+    const results = await cachedMediaSearch(providerQuery);
+    state.searchResults = results;
     renderSearchResults();
-    hydrateSearchResultMetadata(state.searchResults, hydrationGeneration);
   } catch (error) {
     searchResults.replaceChildren();
     const message = document.createElement("div");
@@ -2248,11 +2228,7 @@ searchForm.addEventListener("submit", (event) => {
   executeSearch(searchInput.value.trim());
 });
 
-searchInput.addEventListener("input", queueSuggestionSearch);
-searchInput.addEventListener("focus", () => {
-  const query = searchInput.value.trim();
-  if (query.length >= 3 && state.suggestionQuery === query) renderSuggestions(query);
-});
+searchInput.addEventListener("input", hideSuggestions);
 searchInput.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !searchSuggestions.hidden) {
     event.preventDefault();

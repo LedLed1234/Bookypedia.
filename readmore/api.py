@@ -1,6 +1,8 @@
 import json
+import math
 import sqlite3
 import unicodedata
+from urllib.parse import urlparse
 from collections import OrderedDict
 from difflib import SequenceMatcher
 from threading import Lock
@@ -14,14 +16,28 @@ from .db import get_db
 from .metadata_cache import enqueue_metadata_lookup, metadata_lookup_status
 from .providers import KNOWN_PROVIDERS, PrimaryFallbackProvider, get_provider
 from .providers.base import ProviderUnavailable
+from .providers.tmdb import TMDBProvider
 from .search_cache import cached_catalogue_search
 from .series_cache import enqueue_series_lookup, get_cached_series, wake_series_worker
 from .text import identity_key, normalize_text
+from .tmdb_cache import (
+    cached_movie_collection,
+    cached_tmdb_search,
+    cached_tv_season,
+    cached_tv_series,
+)
 
 
 api = Blueprint("api", __name__)
 VALID_STATUSES = {"want_to_read", "unread", "reading", "read"}
 VALID_BOOK_FILTERS = VALID_STATUSES | {"owned"}
+VALID_MEDIA_STATUSES = {"watchlist", "watching", "completed", "dropped"}
+MEDIA_STATUS_TIMESTAMP_COLUMNS = {
+    "watchlist": "watchlist_at",
+    "watching": "watching_at",
+    "completed": "completed_at",
+    "dropped": "dropped_at",
+}
 STATUS_TIMESTAMP_COLUMNS = {
     "want_to_read": "want_to_read_at",
     "unread": "owned_at",
@@ -162,6 +178,78 @@ def serialize_book(row):
         if value and "T" not in value:
             book[field] = f"{value.replace(' ', 'T')}Z"
     return book
+
+
+def serialize_media(row):
+    media = dict(row)
+    media.pop("user_id", None)
+    media["tmdb_id"] = int(media["tmdb_id"])
+    media["vote_count"] = int(media.get("vote_count") or 0)
+    media["vote_average"] = (
+        float(media["vote_average"]) if media.get("vote_average") is not None else None
+    )
+    media["rating"] = int(media["rating"]) if media.get("rating") is not None else None
+    media["review"] = media.get("review") or ""
+    media["cover_url"] = media.pop("poster_url", None)
+    return media
+
+
+def serialize_saved_season(row):
+    season = dict(row)
+    season.pop("user_id", None)
+    season["item_type"] = "season"
+    season["media_type"] = "tv"
+    season["tv_tmdb_id"] = int(season["tv_tmdb_id"])
+    season["season_number"] = int(season["season_number"])
+    season["episode_count"] = int(season.get("episode_count") or 0)
+    season["title"] = f"{season['series_title']} – Staffel {season['season_number']}"
+    season["overview"] = season.pop("season_overview", None)
+    season["cover_url"] = season.pop("poster_url", None)
+    season["series_cover_url"] = season.pop("series_poster_url", None)
+    return season
+
+
+def normalize_tmdb_image_url(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    parsed = urlparse(text)
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc != "image.tmdb.org"
+        or not parsed.path.startswith("/t/p/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None
+    return text[:1000]
+
+
+def normalize_media_number(value, *, integer=False, minimum=0, maximum=None):
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    try:
+        number = int(value) if integer else float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    if number < minimum or (maximum is not None and number > maximum):
+        return None
+    return number
+
+
+def normalize_media_rating(value):
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    try:
+        numeric = float(value)
+        rating = int(numeric)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(numeric) or numeric != rating or not 1 <= rating <= 5:
+        return None
+    return rating
 
 
 def validation_error(message, status=400):
@@ -378,6 +466,492 @@ def search_books():
         return validation_error(str(error), 503)
     prepared_results = prioritize_series_results(query, results, limit)
     return jsonify(results=attach_cached_cover_urls(db, prepared_results))
+
+
+@api.get("/media/search")
+def search_media():
+    query = request.args.get("q", "").strip()
+    if len(query) < 2:
+        return validation_error("Bitte mindestens zwei Zeichen eingeben.")
+    if len(query) > current_app.config["SEARCH_MAX_LENGTH"]:
+        return validation_error(
+            f"Die Suche darf höchstens {current_app.config['SEARCH_MAX_LENGTH']} Zeichen lang sein."
+        )
+    try:
+        limit = int(request.args.get("limit", SEARCH_RESULT_LIMIT))
+    except (TypeError, ValueError):
+        limit = SEARCH_RESULT_LIMIT
+    limit = min(20, max(1, limit))
+    if error := search_rate_limit_error(get_db()):
+        return error
+
+    provider = TMDBProvider(current_app.config.get("TMDB_READ_ACCESS_TOKEN"))
+    try:
+        results = cached_tmdb_search(
+            get_db(), provider, query, limit, logger=current_app.logger
+        )
+    except ProviderUnavailable as error:
+        current_app.logger.warning(
+            "Mediensuche bei TMDB fehlgeschlagen",
+            extra={
+                "event": "media_search_failed",
+                "provider": "tmdb",
+                "error_type": type(error).__name__,
+            },
+        )
+        return validation_error(str(error), 503)
+    return jsonify(results=results, provider="tmdb")
+
+
+@api.get("/media")
+def list_media():
+    status = request.args.get("status", "").strip()
+    if status and status not in VALID_MEDIA_STATUSES:
+        return validation_error("Ungültiger Wiedergabestatus.")
+    values = [g.user["id"]]
+    where = "user_id = ?"
+    if status:
+        where += " AND status = ?"
+        values.append(status)
+    rows = get_db().execute(
+        f"SELECT * FROM media_items WHERE {where} ORDER BY updated_at DESC, id DESC",
+        values,
+    ).fetchall()
+    return jsonify(media=[serialize_media(row) for row in rows])
+
+
+@api.post("/media")
+def add_media():
+    payload = request.get_json(silent=True) or {}
+    tmdb_id = normalize_media_number(payload.get("tmdb_id"), integer=True, minimum=1)
+    media_type = str(payload.get("media_type") or "").strip()
+    title = str(payload.get("title") or "").strip()
+    status = str(payload.get("status") or "watchlist").strip()
+    if tmdb_id is None:
+        return validation_error("Eine gültige TMDB-ID fehlt.")
+    if media_type not in {"movie", "tv"}:
+        return validation_error("Der Medientyp muss Film oder Serie sein.")
+    if not title:
+        return validation_error("Ein Titel ist erforderlich.")
+    if len(title) > current_app.config["BOOK_TITLE_MAX_LENGTH"]:
+        return validation_error(
+            f"Der Titel darf höchstens {current_app.config['BOOK_TITLE_MAX_LENGTH']} Zeichen lang sein."
+        )
+    if status not in VALID_MEDIA_STATUSES:
+        return validation_error("Ungültiger Wiedergabestatus.")
+
+    release_year = normalize_media_number(
+        payload.get("release_year"), integer=True, minimum=1870, maximum=3000
+    )
+    release_date = normalize_metadata_text(payload.get("release_date"), 32)
+    if release_year is None and release_date and len(release_date) >= 4 and release_date[:4].isdigit():
+        release_year = normalize_media_number(
+            release_date[:4], integer=True, minimum=1870, maximum=3000
+        )
+    timestamp_column = MEDIA_STATUS_TIMESTAMP_COLUMNS[status]
+    values = {
+        "user_id": g.user["id"],
+        "tmdb_id": tmdb_id,
+        "media_type": media_type,
+        "title": title,
+        "original_title": normalize_metadata_text(payload.get("original_title"), 500),
+        "overview": normalize_metadata_text(payload.get("overview"), 10000),
+        "release_date": release_date,
+        "release_year": release_year,
+        "original_language": normalize_metadata_text(payload.get("original_language"), 16),
+        "poster_url": normalize_tmdb_image_url(payload.get("cover_url")),
+        "backdrop_url": normalize_tmdb_image_url(payload.get("backdrop_url")),
+        "vote_average": normalize_media_number(
+            payload.get("vote_average"), minimum=0, maximum=10
+        ),
+        "vote_count": normalize_media_number(
+            payload.get("vote_count"), integer=True, minimum=0
+        ) or 0,
+        "status": status,
+    }
+    db = get_db()
+    try:
+        cursor = db.execute(
+            f"""
+            INSERT INTO media_items (
+                user_id, provider, tmdb_id, media_type, title, original_title,
+                overview, release_date, release_year, original_language,
+                poster_url, backdrop_url, vote_average, vote_count, status,
+                {timestamp_column}
+            ) VALUES (
+                :user_id, 'tmdb', :tmdb_id, :media_type, :title, :original_title,
+                :overview, :release_date, :release_year, :original_language,
+                :poster_url, :backdrop_url, :vote_average, :vote_count, :status,
+                CURRENT_TIMESTAMP
+            )
+            """,
+            values,
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        existing = db.execute(
+            """
+            SELECT * FROM media_items
+            WHERE user_id = ? AND provider = 'tmdb' AND media_type = ? AND tmdb_id = ?
+            """,
+            (g.user["id"], media_type, tmdb_id),
+        ).fetchone()
+        if existing:
+            return jsonify(error="Dieser Titel ist bereits gespeichert.", media=serialize_media(existing)), 409
+        return validation_error("Der Titel konnte nicht gespeichert werden.", 409)
+    row = db.execute("SELECT * FROM media_items WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return jsonify(media=serialize_media(row)), 201
+
+
+def tmdb_collection_response(movie_tmdb_id, **log_context):
+    provider = TMDBProvider(current_app.config.get("TMDB_READ_ACCESS_TOKEN"))
+    try:
+        collection = cached_movie_collection(
+            get_db(), provider, movie_tmdb_id, logger=current_app.logger
+        )
+    except ProviderUnavailable as error:
+        current_app.logger.warning(
+            "TMDB-Filmreihe konnte nicht geladen werden",
+            extra={
+                "event": "media_collection_failed",
+                "provider": "tmdb",
+                "error_type": type(error).__name__,
+                **log_context,
+            },
+        )
+        return validation_error(str(error), 503)
+    return jsonify(collection=collection)
+
+
+@api.get("/media/movie/<int:tmdb_id>/collection")
+def catalogue_media_collection(tmdb_id):
+    if tmdb_id <= 0:
+        return validation_error("Ungültige TMDB-ID.")
+    return tmdb_collection_response(tmdb_id, tmdb_id=tmdb_id)
+
+
+@api.get("/media/<int:media_id>/collection")
+def media_collection(media_id):
+    row = get_db().execute(
+        "SELECT tmdb_id, media_type FROM media_items WHERE id = ? AND user_id = ?",
+        (media_id, g.user["id"]),
+    ).fetchone()
+    if row is None:
+        return validation_error("Titel nicht gefunden.", 404)
+    if row["media_type"] != "movie":
+        return jsonify(collection=None)
+    return tmdb_collection_response(row["tmdb_id"], media_id=media_id)
+
+
+@api.get("/media/seasons")
+def list_saved_seasons():
+    status = request.args.get("status", "").strip()
+    if status and status not in VALID_MEDIA_STATUSES:
+        return validation_error("Ungültiger Wiedergabestatus.")
+    values = [g.user["id"]]
+    where = "user_id = ?"
+    if status:
+        where += " AND status = ?"
+        values.append(status)
+    rows = get_db().execute(
+        f"SELECT * FROM saved_seasons WHERE {where} ORDER BY updated_at DESC, id DESC",
+        values,
+    ).fetchall()
+    return jsonify(seasons=[serialize_saved_season(row) for row in rows])
+
+
+@api.post("/media/seasons")
+def add_saved_season():
+    payload = request.get_json(silent=True) or {}
+    tv_tmdb_id = normalize_media_number(payload.get("tv_tmdb_id"), integer=True, minimum=1)
+    season_number = normalize_media_number(payload.get("season_number"), integer=True, minimum=1)
+    series_title = str(payload.get("series_title") or "").strip()
+    season_title = str(payload.get("season_title") or "").strip()
+    status = str(payload.get("status") or "watchlist").strip()
+    if tv_tmdb_id is None or season_number is None:
+        return validation_error("Eine gültige Serie und Staffel sind erforderlich.")
+    if not series_title or not season_title:
+        return validation_error("Serien- und Staffeltitel sind erforderlich.")
+    if len(series_title) > current_app.config["BOOK_TITLE_MAX_LENGTH"]:
+        return validation_error("Der Serientitel ist zu lang.")
+    if len(season_title) > current_app.config["BOOK_TITLE_MAX_LENGTH"]:
+        return validation_error("Der Staffeltitel ist zu lang.")
+    if status not in VALID_MEDIA_STATUSES:
+        return validation_error("Ungültiger Wiedergabestatus.")
+    air_date = normalize_metadata_text(payload.get("air_date"), 32)
+    release_year = None
+    if air_date and len(air_date) >= 4 and air_date[:4].isdigit():
+        release_year = normalize_media_number(
+            air_date[:4], integer=True, minimum=1870, maximum=3000
+        )
+    timestamp_column = MEDIA_STATUS_TIMESTAMP_COLUMNS[status]
+    values = {
+        "user_id": g.user["id"],
+        "tv_tmdb_id": tv_tmdb_id,
+        "season_number": season_number,
+        "series_title": series_title,
+        "season_title": season_title,
+        "series_overview": normalize_metadata_text(payload.get("series_overview"), 10000),
+        "season_overview": normalize_metadata_text(payload.get("season_overview"), 10000),
+        "air_date": air_date,
+        "release_year": release_year,
+        "original_language": normalize_metadata_text(payload.get("original_language"), 16),
+        "poster_url": normalize_tmdb_image_url(payload.get("cover_url")),
+        "series_poster_url": normalize_tmdb_image_url(payload.get("series_cover_url")),
+        "backdrop_url": normalize_tmdb_image_url(payload.get("backdrop_url")),
+        "episode_count": normalize_media_number(
+            payload.get("episode_count"), integer=True, minimum=0
+        ) or 0,
+        "status": status,
+    }
+    db = get_db()
+    try:
+        cursor = db.execute(
+            f"""
+            INSERT INTO saved_seasons (
+                user_id, provider, tv_tmdb_id, season_number, series_title,
+                season_title, series_overview, season_overview, air_date,
+                release_year, original_language, poster_url, series_poster_url,
+                backdrop_url, episode_count, status, {timestamp_column}
+            ) VALUES (
+                :user_id, 'tmdb', :tv_tmdb_id, :season_number, :series_title,
+                :season_title, :series_overview, :season_overview, :air_date,
+                :release_year, :original_language, :poster_url, :series_poster_url,
+                :backdrop_url, :episode_count, :status, CURRENT_TIMESTAMP
+            )
+            """,
+            values,
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        existing = db.execute(
+            """
+            SELECT * FROM saved_seasons
+            WHERE user_id = ? AND provider = 'tmdb'
+              AND tv_tmdb_id = ? AND season_number = ?
+            """,
+            (g.user["id"], tv_tmdb_id, season_number),
+        ).fetchone()
+        if existing:
+            return jsonify(
+                error="Diese Staffel ist bereits gespeichert.",
+                season=serialize_saved_season(existing),
+            ), 409
+        return validation_error("Die Staffel konnte nicht gespeichert werden.", 409)
+    row = db.execute("SELECT * FROM saved_seasons WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return jsonify(season=serialize_saved_season(row)), 201
+
+
+@api.patch("/media/seasons/<int:season_id>")
+def update_saved_season(season_id):
+    payload = request.get_json(silent=True) or {}
+    status = str(payload.get("status") or "").strip()
+    if status not in VALID_MEDIA_STATUSES:
+        return validation_error("Ungültiger Wiedergabestatus.")
+    timestamp_column = MEDIA_STATUS_TIMESTAMP_COLUMNS[status]
+    db = get_db()
+    cursor = db.execute(
+        f"""
+        UPDATE saved_seasons
+        SET status = ?, {timestamp_column} = COALESCE({timestamp_column}, CURRENT_TIMESTAMP),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND user_id = ?
+        """,
+        (status, season_id, g.user["id"]),
+    )
+    db.commit()
+    if cursor.rowcount == 0:
+        return validation_error("Staffel nicht gefunden.", 404)
+    row = db.execute("SELECT * FROM saved_seasons WHERE id = ?", (season_id,)).fetchone()
+    return jsonify(season=serialize_saved_season(row))
+
+
+@api.delete("/media/seasons/<int:season_id>")
+def delete_saved_season(season_id):
+    db = get_db()
+    cursor = db.execute(
+        "DELETE FROM saved_seasons WHERE id = ? AND user_id = ?",
+        (season_id, g.user["id"]),
+    )
+    db.commit()
+    if cursor.rowcount == 0:
+        return validation_error("Staffel nicht gefunden.", 404)
+    return "", 204
+
+
+def tmdb_series_response(series_tmdb_id):
+    provider = TMDBProvider(current_app.config.get("TMDB_READ_ACCESS_TOKEN"))
+    try:
+        series = cached_tv_series(
+            get_db(), provider, series_tmdb_id, logger=current_app.logger
+        )
+    except ProviderUnavailable as error:
+        current_app.logger.warning(
+            "TMDB-Staffeln konnten nicht geladen werden",
+            extra={
+                "event": "media_seasons_failed",
+                "provider": "tmdb",
+                "tmdb_id": series_tmdb_id,
+                "error_type": type(error).__name__,
+            },
+        )
+        return validation_error(str(error), 503)
+    return jsonify(series=series)
+
+
+@api.get("/media/tv/<int:tmdb_id>/seasons")
+def catalogue_tv_seasons(tmdb_id):
+    if tmdb_id <= 0:
+        return validation_error("Ungültige TMDB-ID.")
+    return tmdb_series_response(tmdb_id)
+
+
+@api.get("/media/tv/<int:tmdb_id>/seasons/<int:season_number>")
+def catalogue_tv_season(tmdb_id, season_number):
+    if tmdb_id <= 0 or season_number <= 0:
+        return validation_error("Ungültige Staffel.")
+    provider = TMDBProvider(current_app.config.get("TMDB_READ_ACCESS_TOKEN"))
+    try:
+        season = cached_tv_season(
+            get_db(), provider, tmdb_id, season_number, logger=current_app.logger
+        )
+    except ProviderUnavailable as error:
+        current_app.logger.warning(
+            "TMDB-Episoden konnten nicht geladen werden",
+            extra={
+                "event": "media_episodes_failed",
+                "provider": "tmdb",
+                "tmdb_id": tmdb_id,
+                "season_number": season_number,
+                "error_type": type(error).__name__,
+            },
+        )
+        return validation_error(str(error), 503)
+    if season is None:
+        return validation_error("Staffel nicht gefunden.", 404)
+    rows = get_db().execute(
+        """
+        SELECT episode_number, rating
+        FROM episode_ratings
+        WHERE user_id = ? AND tv_tmdb_id = ? AND season_number = ?
+        """,
+        (g.user["id"], tmdb_id, season_number),
+    ).fetchall()
+    ratings = {int(row["episode_number"]): int(row["rating"]) for row in rows}
+    for episode in season["episodes"]:
+        episode["user_rating"] = ratings.get(episode["episode_number"])
+    return jsonify(season=season)
+
+
+@api.patch(
+    "/media/tv/<int:tmdb_id>/seasons/<int:season_number>/episodes/"
+    "<int:episode_number>/rating"
+)
+def update_episode_rating(tmdb_id, season_number, episode_number):
+    if tmdb_id <= 0 or season_number <= 0 or episode_number <= 0:
+        return validation_error("Ungültige Episode.")
+    payload = request.get_json(silent=True) or {}
+    if "rating" not in payload:
+        return validation_error("Keine Bewertung angegeben.")
+    raw_rating = payload.get("rating")
+    db = get_db()
+    if raw_rating in (None, ""):
+        db.execute(
+            """
+            DELETE FROM episode_ratings
+            WHERE user_id = ? AND tv_tmdb_id = ?
+              AND season_number = ? AND episode_number = ?
+            """,
+            (g.user["id"], tmdb_id, season_number, episode_number),
+        )
+        db.commit()
+        return jsonify(rating=None)
+    rating = normalize_media_rating(raw_rating)
+    if rating is None:
+        return validation_error("Die Bewertung muss zwischen 1 und 5 Sternen liegen.")
+    db.execute(
+        """
+        INSERT INTO episode_ratings (
+            user_id, tv_tmdb_id, season_number, episode_number, rating
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, tv_tmdb_id, season_number, episode_number)
+        DO UPDATE SET rating = excluded.rating, updated_at = CURRENT_TIMESTAMP
+        """,
+        (g.user["id"], tmdb_id, season_number, episode_number, rating),
+    )
+    db.commit()
+    return jsonify(rating=rating)
+
+
+@api.patch("/media/<int:media_id>")
+def update_media(media_id):
+    payload = request.get_json(silent=True) or {}
+    allowed_fields = {"status", "rating", "review"}
+    if not any(field in payload for field in allowed_fields):
+        return validation_error("Keine Änderung angegeben.")
+
+    status = None
+    if "status" in payload:
+        status = str(payload.get("status") or "").strip()
+        if status not in VALID_MEDIA_STATUSES:
+            return validation_error("Ungültiger Wiedergabestatus.")
+
+    rating = None
+    if "rating" in payload and payload.get("rating") not in (None, ""):
+        rating = normalize_media_rating(payload.get("rating"))
+        if rating is None:
+            return validation_error("Die Bewertung muss zwischen 1 und 5 Sternen liegen.")
+
+    review = None
+    if "review" in payload:
+        review = str(payload.get("review") or "").strip()
+        if error := review_length_error(review):
+            return error
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM media_items WHERE id = ? AND user_id = ?",
+        (media_id, g.user["id"]),
+    ).fetchone()
+    if row is None:
+        return validation_error("Titel nicht gefunden.", 404)
+    assignments = ["updated_at = CURRENT_TIMESTAMP"]
+    values = []
+    if status is not None:
+        timestamp_column = MEDIA_STATUS_TIMESTAMP_COLUMNS[status]
+        assignments.extend([
+            "status = ?",
+            f"{timestamp_column} = COALESCE({timestamp_column}, CURRENT_TIMESTAMP)",
+        ])
+        values.append(status)
+    if "rating" in payload:
+        assignments.append("rating = ?")
+        values.append(rating)
+    if review is not None:
+        assignments.append("review = ?")
+        values.append(review)
+    values.extend([media_id, g.user["id"]])
+    db.execute(
+        f"UPDATE media_items SET {', '.join(assignments)} WHERE id = ? AND user_id = ?",
+        values,
+    )
+    db.commit()
+    updated = db.execute("SELECT * FROM media_items WHERE id = ?", (media_id,)).fetchone()
+    return jsonify(media=serialize_media(updated))
+
+
+@api.delete("/media/<int:media_id>")
+def delete_media(media_id):
+    db = get_db()
+    cursor = db.execute(
+        "DELETE FROM media_items WHERE id = ? AND user_id = ?",
+        (media_id, g.user["id"]),
+    )
+    db.commit()
+    if cursor.rowcount == 0:
+        return validation_error("Titel nicht gefunden.", 404)
+    return "", 204
 
 
 @api.get("/books")

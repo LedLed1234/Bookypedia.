@@ -51,7 +51,7 @@ Touch-Oberfläche gezielt anpassen, ohne die Desktopansicht zu verändern.
 
 Solche Änderungen gehören weiterhin zur serverseitigen Weboberfläche. Nach
 Commit, Push und VPS-Deployment laden eine bereits installierte Produktions-App
-und mobile Browser sie von `https://epiloguehouse.de`; eine neue APK ist dafür
+und mobile Browser sie von `https://movies.epiloguehouse.de`; eine neue APK ist dafür
 nicht erforderlich. Die zusätzliche Klasse `.platform-android` bleibt für
 eventuelle wirklich native Sonderfälle ausschließlich im Capacitor-Wrapper
 erhalten.
@@ -71,7 +71,7 @@ die HTTPS-Adresse explizit beim Synchronisieren gesetzt:
 
 ```bash
 cd mobile
-BOOKYPEDIA_APP_URL=https://epiloguehouse.de npm run sync
+BOOKYPEDIA_APP_URL=https://movies.epiloguehouse.de npm run sync
 cd android
 ANDROID_HOME=/home/led/Android/Sdk ./gradlew assembleDebug
 ```

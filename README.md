@@ -1,22 +1,68 @@
-# Epiloguehouse
+# Moviepedia
 
-Persönliche Leseverwaltung mit Flask, SQLite, Open Library und einer optionalen
-Android-App. Architekturdetails stehen in [ARCHITECTURE.md](ARCHITECTURE.md).
+Persönliche Film- und Serienverwaltung mit Flask, SQLite, TMDB und einer
+optionalen Android-App. Filme und Serien lassen sich mit Detailvorschau suchen,
+zur Watchlist hinzufügen, mit 1–5 Sternen plus persönlicher Review bewerten und
+unter **Watching**, **Completed** oder **Dropped** verwalten. Die Sammlung kann
+nach Filmen oder Serien gefiltert werden; bei Filmen zeigt die Infoansicht
+zugehörige TMDB-Filmreihen und deren einzelne Teile. Bei Serien erscheinen
+Staffel-Tabs und eine scrollbar bleibende Episodenliste. Episoden können
+persönlich bewertet, aber nicht zur Sammlung hinzugefügt werden. Einzelne
+Staffeln lassen sich dagegen als eigene Watchlist-Einträge speichern. Der
+„Staffeln“-Schalter in der Sammlungsleiste blendet diese Karten ein oder aus,
+ohne sie zu löschen.
+Historische Buchdaten bleiben während der Umstellung unangetastet, werden in
+der Moviepedia-Oberfläche aber nicht mehr angezeigt. Architekturdetails stehen
+in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Lokal starten
 
 ```bash
 sudo systemctl start docker
-cd ~/readmore
+cd /home/led/moviepedia/Bookypedia.
 docker compose up --build -d
 ```
 
-Danach: **http://localhost:5000**
+Danach: **http://localhost:5001**
 
 Beim ersten Start ein Konto anlegen:
 
 ```bash
 docker compose exec app flask --app run.py user create led
+```
+
+## TMDB für Filme und Serien konfigurieren
+
+Den **API Read Access Token** ausschließlich in `.env` speichern:
+
+```bash
+TMDB_READ_ACCESS_TOKEN=dein-read-access-token
+```
+
+Der Token bleibt im Flask-Backend und wird nicht an den Browser ausgeliefert.
+Die Suche verwendet deutsche Metadaten und die Region Deutschland. Ein separater
+TMDB-v3-API-Key ist dafür nicht erforderlich.
+
+### Cache und gespeicherte Metadaten
+
+Moviepedia verwendet zwei Cache-Ebenen: Der Browser hält häufig benötigte
+Antworten kurz im Arbeitsspeicher; Flask speichert TMDB-Suchen, Filmreihen,
+Staffellisten und Episodendetails zusätzlich dauerhaft in SQLite. Die regulären
+TTL-Werte liegen je nach Datentyp zwischen 12 Stunden und 7 Tagen. Ist TMDB
+vorübergehend nicht erreichbar, dürfen bis zu 30 Tage alte Cache-Daten als
+Fallback angezeigt werden.
+
+Gespeicherte Filme und Serien liegen unabhängig davon vollständig in
+`media_items`, gespeicherte Staffeln in `saved_seasons`. Ein abgelaufener oder
+geleerter TMDB-Cache entfernt deshalb keine Titel, Beschreibungen, Poster-URLs,
+Statuswerte oder persönlichen Bewertungen aus der Sammlung.
+
+Die Anzahl der Staffel-Tabs pro Zeile steht in
+`readmore/static/config.json`. Standardmäßig beginnt nach sechs Tabs eine neue
+Zeile:
+
+```json
+"seasonTabsPerRow": 6
 ```
 
 ## Häufige Befehle
@@ -41,7 +87,12 @@ docker compose down
 Nicht ohne Absicht `docker compose down -v` verwenden: `-v` löscht auch die
 gespeicherte Bibliothek.
 
-## Buchkataloge konfigurieren
+## Alter Buchkatalog (nur Kompatibilität)
+
+Die folgenden Einstellungen gehören zum erhaltenen Bookypedia-Backend und
+werden von der neuen Moviepedia-Oberfläche nicht mehr verwendet. Sie bleiben
+vorerst bestehen, damit vorhandene Buchdaten und alte Installationen nicht
+beschädigt werden.
 
 In `readmore/static/config.json`:
 
@@ -76,8 +127,8 @@ git push
 ```
 
 Ist der automatische VPS-Deploy aktiv, sind danach keine weiteren Schritte
-nötig. Der VPS prüft `main` alle zwei Minuten und baut nur bei einem neuen
-Commit.
+nötig. Der VPS prüft die Branches `main` und `movies` alle fünf Minuten und baut
+nur die App mit einem neuen Commit.
 
 ## Android lokal testen
 
@@ -100,7 +151,7 @@ APK-Build. Für native Änderungen oder eine andere Serveradresse:
 
 ```bash
 cd ~/readmore/mobile
-BOOKYPEDIA_APP_URL=https://epiloguehouse.de npm run sync
+BOOKYPEDIA_APP_URL=https://movies.epiloguehouse.de npm run sync
 cd android
 ANDROID_HOME=/home/led/Android/Sdk ./gradlew assembleDebug
 
@@ -112,39 +163,99 @@ Weitere Android-Befehle: [mobile/README.md](mobile/README.md)
 
 ## VPS erstmalig einrichten
 
-Produktionsverzeichnis: `/opt/bookypedia`
+Auf dem VPS laufen zwei getrennte Checkouts desselben Git-Remotes:
+
+- `/opt/bookypedia` auf Branch `main`, intern auf `127.0.0.1:8000`
+- `/opt/moviepedia` auf Branch `movies`, intern auf `127.0.0.1:8001`
+
+Der bestehende Bookypedia-Checkout bleibt bestehen. Moviepedia wird zusätzlich
+geklont:
 
 ```bash
-cd /opt/bookypedia
-cp .env.example .env
+repo_url="$(sudo git -C /opt/bookypedia remote get-url origin)"
+sudo git clone --branch movies --single-branch \
+  "${repo_url}" /opt/moviepedia
+cd /opt/moviepedia
+sudo cp .env.example .env
 openssl rand -hex 32
 ```
 
-Den erzeugten Wert als `SECRET_KEY` in `.env` eintragen und außerdem
-`BOOKYPEDIA_DOMAIN=epiloguehouse.de` setzen. Danach:
+Den erzeugten Wert als `SECRET_KEY` in `/opt/moviepedia/.env` eintragen. Für
+Moviepedia müssen außerdem diese Werte gesetzt sein:
+
+```dotenv
+APP_PORT=8001
+SESSION_COOKIE_SECURE=1
+TRUST_PROXY=1
+TMDB_READ_ACCESS_TOKEN=dein-tmdb-read-access-token
+```
+
+In `/opt/bookypedia/.env` müssen `SESSION_COOKIE_SECURE=1` und `TRUST_PROXY=1`
+gesetzt sein; Bookypedia bleibt auf Port 8000. Danach beide Apps zunächst lokal
+starten:
 
 ```bash
-docker compose -f compose.prod.yaml -f compose.public.yaml up --build -d
-docker compose -f compose.prod.yaml -f compose.public.yaml ps
+cd /opt/bookypedia
+sudo docker compose -p bookypedia -f compose.prod.yaml up --build -d
+
+cd /opt/moviepedia
+sudo APP_PORT=8001 docker compose -p moviepedia -f compose.prod.yaml up --build -d
+
 curl -fsS http://127.0.0.1:8000/health
+curl -fsS http://127.0.0.1:8001/health
+```
+
+### Gemeinsamer Reverse Proxy
+
+Nur ein zentraler Caddy-Prozess darf Ports 80 und 443 belegen. Der VPS-Caddy
+verwendet `deploy/Caddyfile.vps` und leitet wie folgt weiter:
+
+- `https://epiloguehouse.de` → Bookypedia auf Port 8000
+- `https://movies.epiloguehouse.de` → Moviepedia auf Port 8001
+
+Für `movies.epiloguehouse.de` zuerst beim DNS-Anbieter einen A- und, falls
+verwendet, AAAA-Eintrag auf denselben VPS wie `epiloguehouse.de` setzen. Danach
+Caddy auf dem Host installieren und konfigurieren:
+
+```bash
+sudo apt update
+sudo apt install -y caddy
+sudo install -m 0644 /opt/moviepedia/deploy/Caddyfile.vps /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
+```
+
+Beim Wechsel vom bisherigen Caddy-Container einmalig dessen Ports freigeben und
+den Host-Caddy starten:
+
+```bash
+cd /opt/bookypedia
+sudo docker compose -p bookypedia \
+  -f compose.prod.yaml -f compose.public.yaml stop caddy
+sudo docker compose -p bookypedia \
+  -f compose.prod.yaml -f compose.public.yaml rm -f caddy
+sudo systemctl restart caddy
 ```
 
 ## VPS manuell aktualisieren
 
 ```bash
-ssh bookypedia-vps
 cd /opt/bookypedia
-git pull --ff-only
-docker compose -f compose.prod.yaml -f compose.public.yaml up --build -d
-docker compose -f compose.prod.yaml -f compose.public.yaml ps
+sudo git pull --ff-only origin main
+sudo docker compose -p bookypedia -f compose.prod.yaml up --build -d
+
+cd /opt/moviepedia
+sudo git pull --ff-only origin movies
+sudo APP_PORT=8001 docker compose -p moviepedia -f compose.prod.yaml up --build -d
 ```
 
 ## Automatisches VPS-Deployment
 
-Einmalig auf dem VPS installieren:
+Das Skript prüft beide Checkouts unabhängig voneinander. Ein Fehler in einer App
+verhindert nicht, dass die andere geprüft und gegebenenfalls aktualisiert wird.
+Der Timer startet es alle fünf Minuten. Einmalig auf dem VPS installieren:
 
 ```bash
-cd /opt/bookypedia
+cd /opt/moviepedia
 
 sudo install -m 0755 deploy/epiloguehouse-auto-deploy \
   /usr/local/sbin/epiloguehouse-auto-deploy
@@ -172,7 +283,7 @@ Wenn das Deploy-Skript selbst geändert wurde, die installierte Kopie erneut
 aktualisieren:
 
 ```bash
-cd /opt/bookypedia
+cd /opt/moviepedia
 sudo install -m 0755 deploy/epiloguehouse-auto-deploy \
   /usr/local/sbin/epiloguehouse-auto-deploy
 ```
@@ -189,26 +300,31 @@ docker compose exec app flask --app run.py user deactivate freund
 docker compose exec app flask --app run.py user activate freund
 ```
 
-Auf dem VPS, ausgeführt unter `/opt/bookypedia`:
+Auf dem VPS für Bookypedia, ausgeführt unter `/opt/bookypedia`:
 
 ```bash
-docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+docker compose -p bookypedia -f compose.prod.yaml exec app \
   flask --app run.py user list
-docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+docker compose -p bookypedia -f compose.prod.yaml exec app \
   flask --app run.py user create freund
-docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+docker compose -p bookypedia -f compose.prod.yaml exec app \
   flask --app run.py user reset-password freund
-docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+docker compose -p bookypedia -f compose.prod.yaml exec app \
   flask --app run.py user deactivate freund
-docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+docker compose -p bookypedia -f compose.prod.yaml exec app \
   flask --app run.py user activate freund
 ```
+
+Für Moviepedia dieselben Befehle unter `/opt/moviepedia` mit `-p moviepedia`.
 
 ## Produktionslogs
 
 ```bash
-cd /opt/bookypedia
-docker compose -f compose.prod.yaml -f compose.public.yaml logs -f app caddy
+sudo docker compose --env-file /opt/bookypedia/.env -p bookypedia \
+  -f /opt/bookypedia/compose.prod.yaml logs -f app
+sudo docker compose --env-file /opt/moviepedia/.env -p moviepedia \
+  -f /opt/moviepedia/compose.prod.yaml logs -f app
+sudo journalctl -fu caddy
 sudo journalctl -fu epiloguehouse-deploy.service
 ```
 

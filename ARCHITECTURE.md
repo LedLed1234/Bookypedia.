@@ -1,4 +1,4 @@
-# Epiloguehouse – Architektur
+# Moviepedia – Architektur
 
 ## Überblick
 
@@ -7,6 +7,7 @@ flowchart LR
     Browser[Browser oder Android-Wrapper] --> Caddy[Caddy / HTTPS]
     Caddy --> Flask[Gunicorn + Flask]
     Flask --> SQLite[(SQLite)]
+    Flask --> TMDB[TMDB]
     Flask --> Worker[Hintergrund-Worker]
     Worker --> OpenLibrary[Open Library]
     Flask --> OpenLibrary
@@ -23,6 +24,7 @@ dasselbe Backend. Capacitor stellt lediglich den nativen Android-Wrapper bereit.
 | Produktion | Gunicorn | WSGI-Server für Flask |
 | Reverse Proxy | Caddy | Domain, HTTPS und Zertifikate |
 | Datenbank | SQLite | Konten, Bibliotheken, Metadaten und Caches |
+| Medienkatalog | TMDB | Film- und Seriensuche, Poster und lokalisierte Metadaten |
 | Katalog | Open Library | Suche, Ausgaben, Cover und Reihen |
 | Android | Capacitor | Native Hülle um die Web-App |
 | Betrieb | Docker Compose | Entwicklung und Produktion |
@@ -37,9 +39,11 @@ verfügbar sind. Die Entwicklungsdaten liegen im Volume `readmore_data`.
 
 ### Produktion
 
-`compose.prod.yaml` startet Gunicorn auf `127.0.0.1:8000`.
-`compose.public.yaml` ergänzt Caddy auf Port 80 und 443. Produktionsdaten liegen
-im Volume `readmore_prod_data`; Caddy verwendet eigene Volumes für Zertifikate.
+`compose.prod.yaml` startet Gunicorn hinter einem konfigurierbaren lokalen
+Host-Port. Auf dem VPS verwendet Bookypedia `127.0.0.1:8000` und Moviepedia
+`127.0.0.1:8001`. Ein zentraler Caddy auf dem Host übernimmt Port 80/443 und
+leitet beide Domains weiter. Produktionsdaten liegen pro Compose-Projekt in
+einem eigenen Volume `readmore_prod_data`.
 
 ## Authentifizierung und Benutzertrennung
 
@@ -62,6 +66,9 @@ Wichtige Tabellen:
 | Tabelle | Inhalt |
 | --- | --- |
 | `users` | Konten, Passwort-Hash, Aktivstatus und Sitzungs-Version |
+| `media_items` | Filme und Serien pro Konto, TMDB-ID, Status, Bewertung, Review und Metadaten |
+| `episode_ratings` | Persönliche Episodenbewertungen pro Konto, Serie, Staffel und Episode |
+| `saved_seasons` | Separat gespeicherte Staffeln mit Status und TMDB-Metadaten pro Konto |
 | `books` | Bücher einer Person, Status, Bewertung und Metadaten |
 | `series` | gemeinsam gecachte Reihen |
 | `series_members` | Bücher und Positionen innerhalb einer Reihe |
@@ -70,6 +77,7 @@ Wichtige Tabellen:
 | `metadata_lookups` | Status und Wiederholungen der Metadatenabfragen |
 | `book_metadata_cache` | gecachte Ausgabedetails der Buchanbieter |
 | `catalogue_search_cache` | persistente, anbieterbezogene Suchergebnisse |
+| `tmdb_cache` | persistente TMDB-Suchen, Filmreihen, Staffellisten und Episodendetails |
 | `cover_cache` | externe Cover-Quellen und lokale Dateipfade |
 
 SQLite-Migrationen werden beim Anwendungsstart in `readmore/db.py` ausgeführt.
@@ -88,6 +96,34 @@ Beim Zurückstufen werden zeitlich spätere Meilensteine entfernt, ältere bekan
 Zeitpunkte bleiben erhalten.
 
 ## Suche, Werke und Ausgaben
+
+Die neue Film- und Seriensuche liegt unter `/api/media/search`. Das Backend
+authentifiziert sich mit `TMDB_READ_ACCESS_TOKEN`, fragt TMDB mit `de-DE` und
+Region `DE` ab und liefert ausschließlich normalisierte Film- und
+Serientreffer an den Browser. Personen aus der TMDB-Multisuche werden verworfen.
+Der Token bleibt serverseitig. Gespeicherte Treffer landen getrennt in
+`media_items`; dadurch gelangen keine Mediendaten in die bestehende
+Büchertabelle. Die sichtbaren Statuswerte sind `watchlist`, `watching`,
+`completed` und `dropped`. Die Endpunkte `/api/media` und
+`/api/media/<id>` verwalten die benutzerspezifische Sammlung. Suchtreffer
+lassen sich vor dem Speichern in einer Detailvorschau öffnen. Persönliche
+Bewertungen von 1–5 Sternen und optionale Reviews bleiben strikt dem jeweiligen
+Konto zugeordnet und sind von der öffentlichen TMDB-Wertung getrennt.
+
+Für gespeicherte Filme fragt `/api/media/<id>/collection` zunächst die
+TMDB-Filmdetails und anschließend – falls `belongs_to_collection` vorhanden ist –
+die zugehörige Collection ab. Die normalisierten Teile erscheinen chronologisch
+in der Film-Infoansicht. Noch nicht gespeicherte Suchtreffer verwenden dafür
+`/api/media/movie/<tmdb_id>/collection`, sodass dieselben Reihendaten bereits in
+der Vorschau sichtbar sind. Serien verwenden `/api/media/tv/<tmdb_id>/seasons`
+für reguläre Staffeln und `/api/media/tv/<tmdb_id>/seasons/<staffel>` für die
+Episoden. Episodebewertungen liegen unabhängig von der Sammlung in
+`episode_ratings`; Episoden selbst können nicht gespeichert werden. Einzelne
+Staffeln liegen dagegen in `saved_seasons` und können unabhängig von der
+übergeordneten Serie den Status wechseln. Ihre Karten werden clientseitig über
+den persistenten „Staffeln“-Schalter ein- oder ausgeblendet.
+
+Die bisherige Buchsuche bleibt während der Migration vorerst parallel bestehen:
 
 `readmore/providers/open_library.py` und `readmore/providers/google_books.py`
 kapseln die externen Kataloge hinter einer gemeinsamen Provider-Schnittstelle.
@@ -127,7 +163,7 @@ Hintergrundabfragen nicht versehentlich an Open Library geschickt.
 Cover von Open Library und Google Books werden beim ersten Abruf unter
 `/data/covers` gespeichert. Die Tabelle `cover_cache` ordnet die externe Quelle
 dem lokalen Dateipfad zu. Weitere Browser und Geräte laden dasselbe Cover danach
-direkt von Epiloguehouse; das persistente Docker-Volume übersteht Image-Neubauten.
+direkt von Moviepedia; das persistente Docker-Volume übersteht Image-Neubauten.
 Open-Library-Weiterleitungen auf dessen Archive unter `*.archive.org` sind
 zugelassen; andere Redirect-Ziele werden zum Schutz vor SSRF verworfen.
 
@@ -173,6 +209,8 @@ erfordern einen neuen Android-Build.
 
 `readmore/static/config.json` enthält Standardwerte und verfügbare Optionen.
 `defaults.reviewMaxLength` begrenzt Bewertungstexte in Oberfläche und Backend.
+`defaults.seasonTabsPerRow` legt fest, nach wie vielen Staffel-Tabs eine neue
+Zeile beginnt (Standard: `6`).
 Die weiteren Längen- und Suchgrenzen liegen ebenfalls unter `defaults`. Das
 Backend begrenzt Suchanfragen zusätzlich pro Konto und Minute; die Zähler
 liegen in `search_rate_limits` und überstehen mehrere Gunicorn-Threads.
@@ -209,10 +247,12 @@ drei Dateien mit jeweils 10 MB.
 
 ## Deployment
 
-Der systemd-Timer startet `deploy/epiloguehouse-auto-deploy` alle zwei Minuten.
+Der systemd-Timer startet `deploy/epiloguehouse-auto-deploy` alle fünf Minuten.
+Das Skript prüft `/opt/bookypedia` auf Branch `main` und `/opt/moviepedia` auf
+Branch `movies` unabhängig voneinander und deployt nur neue Commits.
 Das Skript:
 
-1. lädt nur die Git-Referenzen von `origin/main`,
+1. lädt die Git-Referenzen von `origin/main` und `origin/movies`,
 2. beendet sich ohne Log, wenn kein neuer Commit vorhanden ist,
 3. akzeptiert ausschließlich einen sauberen Fast-Forward-Verlauf,
 4. baut und startet die Produktions-Container,
@@ -231,9 +271,9 @@ Deploy-Skript selbst müssen daher erneut installiert werden.
 - Session-Cookies sind in Produktion `Secure`, `HttpOnly` und `SameSite=Lax`.
 - Sicherheitsheader verbieten unter anderem Frames, unnötige Browserrechte und
   fremde Skriptquellen.
-- Das öffentliche GitHub-Repository erlaubt ohne Schreibberechtigung keine
-  Änderungen an `main`; der automatische Deploy vertraut dem Branch dennoch
-  als Produktionsquelle.
+- Das GitHub-Repository erlaubt ohne Schreibberechtigung keine Änderungen an
+  `main` oder `movies`; der automatische Deploy vertraut beiden Branches
+  dennoch als Produktionsquellen.
 
 ## Persistenz und Sicherungen
 

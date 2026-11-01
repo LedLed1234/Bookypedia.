@@ -1,7 +1,7 @@
 {
-  "name": "Epiloguehouse – Meine Leseliste",
-  "short_name": "Epiloguehouse",
-  "description": "Deine persönliche, lokale Leseverwaltung.",
+  "name": "Moviepedia – Filme & Serien",
+  "short_name": "Moviepedia",
+  "description": "Deine persönliche Film- und Serienverwaltung.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#101512",

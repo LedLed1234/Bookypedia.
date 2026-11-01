@@ -246,6 +246,7 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .status-tab strong { min-width: 24px; padding: 2px 7px; color: var(--muted); background: var(--soft-tint); border-radius: 99px; font-size: .72rem; }
 .status-tab.active { color: var(--text); background: var(--soft-tint); box-shadow: inset 0 0 0 1px var(--accent), 0 3px 12px rgba(0,0,0,.24); }
 .status-tab.active strong { color: var(--accent); background: var(--surface-tint); }
+.media-status-tabs { grid-template-columns: repeat(5, 1fr); }
 
 .search-panel { margin-bottom: 64px; padding: clamp(22px, 4vw, 34px); background: var(--surface-tint); border: 1px solid var(--theme-border); border-radius: 18px; }
 .library { min-height: 300px; }
@@ -254,13 +255,15 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .collection-heading { margin-bottom: 22px; }
 .collection-tools { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 .collection-action-buttons { display: flex; align-items: center; gap: 8px; }
+.season-visibility-button[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 .grouping-button, .sort-button { min-height: 36px; padding: 6px 10px; font-size: .76rem; }
 .grouping-button[aria-pressed="true"] { color: var(--accent); background: var(--soft-tint); border-color: var(--accent); }
-.sort-picker { position: relative; }
+.sort-picker, .media-type-picker { position: relative; }
 .sort-menu { position: absolute; top: calc(100% + 7px); right: 0; z-index: 12; width: 230px; padding: 6px; background: var(--surface-tint); border: 1px solid var(--theme-border); border-radius: 11px; box-shadow: var(--shadow); }
 .sort-menu button { width: 100%; padding: 9px 10px; color: var(--muted); background: transparent; border: 0; border-radius: 7px; text-align: left; font-size: .78rem; font-weight: 700; }
 .sort-menu button:hover, .sort-menu button:focus-visible { color: var(--text); background: var(--soft-tint); }
 .sort-menu button[aria-checked="true"] { color: var(--accent); background: var(--soft-tint); }
+.media-type-menu { width: 170px; }
 .view-count { margin: 0; color: var(--muted); font-size: .85rem; }
 
 .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px; }
@@ -329,6 +332,37 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .search-card .book-title { font-size: .94rem; }
 .search-card .card-actions { gap: 7px; }
 .search-card .button { min-height: 40px; padding: 8px 10px; font-size: .78rem; }
+.media-search-card .media-poster-wrap { background: color-mix(in srgb, var(--soft-tint) 82%, #032541); }
+.media-search-card .book-cover { object-fit: cover; filter: drop-shadow(0 7px 11px rgba(0,0,0,.4)); }
+.media-type-badge { display: inline-flex; margin-bottom: 8px; padding: 3px 7px; color: var(--accent-ink); background: var(--accent); border-radius: 99px; font-size: .63rem; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
+.media-rating { margin: 7px 0 0; color: var(--gold); font-size: .76rem; font-weight: 800; }
+.media-overview { display: -webkit-box; margin: 0 0 14px; overflow: hidden; color: var(--muted); font-size: .78rem; line-height: 1.5; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
+.media-search-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; }
+.media-search-actions .added-label { margin: 0; }
+.media-save-notice { margin-top: auto; padding: 9px 10px; color: var(--muted); background: var(--soft-tint); border: 1px solid var(--theme-border); border-radius: 9px; font-size: .73rem; font-weight: 700; text-align: center; }
+.tmdb-attribution { margin: 18px 0 0; color: var(--muted); font-size: .68rem; line-height: 1.45; text-align: center; }
+.tmdb-attribution a { color: #01b4e4; font-weight: 900; letter-spacing: .06em; }
+.media-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.media-library-card { position: relative; }
+.media-library-card.season-library-card { border-color: color-mix(in srgb, var(--theme-border) 72%, var(--accent)); }
+.season-library-card .media-type-badge { color: var(--accent-ink); background: var(--accent); }
+.season-parent-title { margin: -2px 0 5px; color: var(--muted); font-size: .69rem; font-weight: 750; }
+.media-library-card .media-poster-wrap { aspect-ratio: 2 / 3; background: color-mix(in srgb, var(--soft-tint) 82%, #032541); }
+.media-info-trigger { cursor: pointer; outline: none; }
+.media-info-trigger:focus-visible { box-shadow: inset 0 0 0 3px var(--accent); }
+.media-library-card .media-poster { width: 100%; height: 100%; padding: 0; object-fit: cover; filter: none; }
+.media-info-button { position: absolute; top: 10px; right: 10px; z-index: 2; width: 34px; height: 34px; color: #fff; background: rgba(10,14,12,.72); border-color: rgba(255,255,255,.38); font-size: .92rem; font-weight: 900; backdrop-filter: blur(8px); }
+.media-info-button:hover, .media-info-button:focus-visible { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.media-library-card .book-body { padding: 14px; }
+.media-library-card .book-meta { min-height: 0; }
+.media-library-card .media-overview { -webkit-line-clamp: 3; }
+.media-library-actions { display: grid; grid-template-columns: minmax(0, 1fr) 42px 42px; align-items: center; gap: 7px; margin-top: auto; }
+.media-library-actions .icon-button { width: 42px; height: 42px; }
+.media-rate-button { color: var(--muted); font-size: 1.15rem; }
+.media-rate-button.rated { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 45%, var(--theme-border)); }
+.media-personal-rating { margin: -4px 0 12px; color: var(--gold); font-size: .75rem; font-weight: 850; letter-spacing: .025em; }
+.media-review-excerpt { display: -webkit-box; margin: -3px 0 13px; overflow: hidden; color: var(--muted); font-size: .73rem; font-style: italic; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.settings-attribution { margin-top: -4px; }
 .added-label { min-height: 42px; display: grid; place-items: center; color: var(--text); background: var(--soft-tint); border-radius: 9px; font-size: .8rem; font-weight: 700; }
 
 .empty-state, .loading-state { padding: 64px 20px; color: var(--muted); text-align: center; background: var(--surface-tint); border: 1px dashed var(--theme-border); border-radius: var(--radius); }
@@ -344,6 +378,71 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .dialog label, .rating-field legend { display: grid; gap: 7px; color: var(--muted); font-size: .8rem; font-weight: 700; }
 .dialog textarea { resize: vertical; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 3px; }
+.media-preview-dialog { width: min(920px, calc(100% - 28px)); overflow-y: auto; border: 1px solid var(--theme-border); }
+.media-preview-shell { position: relative; min-height: 430px; }
+.media-preview-close { position: absolute; top: 14px; right: 14px; z-index: 3; color: #fff; background: rgba(10,14,12,.72); border-color: rgba(255,255,255,.3); backdrop-filter: blur(8px); }
+.media-preview-backdrop { height: 220px; background: linear-gradient(135deg, var(--soft-tint), var(--surface-tint)); background-position: center; background-size: cover; }
+.media-preview-backdrop.has-image::after { content: ""; display: block; width: 100%; height: 100%; background: linear-gradient(to bottom, rgba(10,14,12,.08), var(--surface-tint)); }
+.media-preview-content { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 26px; padding: 0 30px 30px; margin-top: -80px; }
+.media-preview-poster { position: relative; z-index: 1; }
+.media-preview-poster .media-poster-wrap { aspect-ratio: 2 / 3; padding: 0; overflow: hidden; border: 1px solid var(--theme-border); border-radius: 12px; box-shadow: var(--shadow); }
+.media-preview-poster .media-poster { width: 100%; height: 100%; padding: 0; object-fit: cover; filter: none; }
+.media-preview-copy { position: relative; z-index: 1; align-self: end; min-width: 0; padding-top: 92px; }
+.media-preview-copy h2 { margin: 0 0 8px; font-size: clamp(1.5rem, 4vw, 2.2rem); }
+.media-preview-meta { margin: 0 0 7px; color: var(--muted); font-size: .8rem; }
+.media-preview-overview { margin: 18px 0 22px; color: var(--text); font-size: .9rem; line-height: 1.65; }
+.media-preview-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.media-preview-actions [hidden] { display: none; }
+.media-collection-section { padding: 25px 30px 30px; border-top: 1px solid var(--theme-border); }
+.media-collection-section[hidden] { display: none; }
+.media-collection-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 8px; }
+.media-collection-heading h3 { margin: 3px 0 0; font-size: 1.2rem; }
+.media-collection-heading > p { margin: 0; color: var(--muted); font-size: .75rem; font-weight: 800; }
+.media-collection-status { max-width: 720px; margin: 0 0 18px; color: var(--muted); font-size: .78rem; line-height: 1.55; }
+.media-collection-list { display: grid; grid-auto-columns: minmax(245px, 280px); grid-auto-flow: column; gap: 10px; padding-bottom: 6px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: inline proximity; }
+.media-collection-part { min-width: 0; display: grid; grid-template-columns: 78px minmax(0, 1fr); overflow: hidden; background: var(--soft-tint); border: 1px solid var(--theme-border); border-radius: 11px; scroll-snap-align: start; }
+.media-collection-part.current { border-color: var(--accent); }
+.media-collection-part > img, .media-collection-placeholder { width: 78px; height: 117px; object-fit: cover; }
+.media-collection-placeholder { border: 0; border-radius: 0; }
+.media-collection-part-copy { min-width: 0; display: flex; flex-direction: column; align-items: start; gap: 5px; padding: 10px; }
+.media-collection-position { padding: 3px 6px; color: var(--accent-ink); background: var(--accent); border-radius: 99px; font-size: .58rem; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.media-collection-part-copy h4 { display: -webkit-box; margin: 0; overflow: hidden; font-size: .78rem; line-height: 1.25; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.media-collection-part-copy p { margin: 0; color: var(--muted); font-size: .68rem; }
+.media-collection-state { margin-top: auto; color: var(--accent); font-size: .68rem; font-weight: 850; }
+.media-collection-add { width: 100%; min-height: 32px; padding: 5px 7px; margin-top: auto; font-size: .68rem; }
+.media-series-section { padding: 25px 30px 30px; border-top: 1px solid var(--theme-border); }
+.media-series-section[hidden], .media-episodes-panel[hidden] { display: none; }
+.media-series-heading, .media-episodes-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; }
+.media-series-heading h3, .media-episodes-heading h4 { margin: 3px 0 0; font-size: 1.2rem; }
+.media-series-heading > p, .media-episodes-heading > p { margin: 0; color: var(--muted); font-size: .75rem; font-weight: 800; }
+.media-episodes-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.media-episodes-tools > p { margin: 0; color: var(--muted); font-size: .75rem; font-weight: 800; }
+.media-season-add { min-height: 34px; padding: 6px 10px; font-size: .7rem; }
+.media-season-add.saved { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.media-series-status, .media-episodes-status { margin: 8px 0 16px; color: var(--muted); font-size: .78rem; line-height: 1.5; }
+.media-season-tabs { display: grid; grid-template-columns: repeat(var(--season-tabs-per-row, 6), minmax(0, 1fr)); gap: 8px; }
+.media-season-tab { min-width: 0; min-height: 40px; padding: 8px 6px; color: var(--text); background: var(--soft-tint); border: 1px solid var(--theme-border); border-radius: 9px; font-size: .74rem; font-weight: 850; cursor: pointer; }
+.media-season-tab:hover, .media-season-tab:focus-visible { border-color: var(--accent); }
+.media-season-tab.active { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.media-episodes-panel { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--theme-border); }
+.media-episodes-heading h4 { font-size: 1rem; }
+.media-episodes-list { display: grid; gap: 9px; max-height: min(460px, 55vh); padding-right: 5px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.media-episode { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 13px; min-width: 0; overflow: hidden; background: var(--soft-tint); border: 1px solid var(--theme-border); border-radius: 11px; }
+.media-episode-still, .media-episode-placeholder { width: 120px; height: 68px; object-fit: cover; align-self: start; }
+.media-episode-placeholder { display: grid; place-items: center; color: var(--muted); background: var(--surface-tint); font-size: .65rem; font-weight: 800; }
+.media-episode-copy { min-width: 0; display: grid; gap: 6px; padding: 10px 12px 10px 0; }
+.media-episode-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.media-episode-heading h5 { min-width: 0; margin: 0; font-size: .82rem; line-height: 1.3; }
+.media-episode-heading span { flex: 0 0 auto; color: var(--accent); font-size: .65rem; font-weight: 900; }
+.media-episode-meta, .media-episode-overview { margin: 0; color: var(--muted); font-size: .69rem; line-height: 1.45; }
+.media-episode-overview { display: -webkit-box; overflow: hidden; color: var(--text); -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.episode-rating { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-top: 2px; }
+.episode-rating-label { margin-right: 4px; color: var(--muted); font-size: .66rem; font-weight: 750; }
+.episode-rating-star { width: 25px; height: 25px; padding: 0; color: var(--muted); background: transparent; border: 0; border-radius: 6px; font-size: 1rem; line-height: 1; cursor: pointer; }
+.episode-rating-star:hover, .episode-rating-star:focus-visible, .episode-rating-star.selected { color: var(--gold); background: color-mix(in srgb, var(--gold) 12%, transparent); }
+.episode-rating-clear { min-height: 25px; padding: 2px 7px; margin-left: 5px; font-size: .62rem; }
+.episode-rating-saving { opacity: .55; pointer-events: none; }
+.media-rating-dialog { overflow-y: auto; border: 1px solid var(--theme-border); }
 .manual-dialog { width: min(700px, calc(100% - 28px)); overflow-y: auto; border: 1px solid var(--theme-border); }
 .manual-dialog-shell { gap: 20px; }
 .manual-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
@@ -584,6 +683,29 @@ html.dialog-scroll-locked { overflow: hidden; }
   .search-card { grid-template-columns: 92px minmax(0, 1fr); }
   .search-card .book-cover-wrap { min-height: 190px; aspect-ratio: auto; padding: 10px; }
   .search-card .book-placeholder { width: 62px; }
+  .media-grid:not(.search-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .media-info-button { top: 6px; right: 6px; width: 30px; height: 30px; font-size: .8rem; }
+  .media-library-actions { grid-template-columns: 1fr 1fr; }
+  .media-library-actions .status-select { grid-column: 1 / -1; }
+  .media-library-actions .icon-button { width: 100%; height: 34px; }
+  .media-personal-rating { font-size: .65rem; }
+  .media-review-excerpt { display: none; }
+  .media-preview-dialog { max-height: calc(100vh - 18px); overflow-y: auto; }
+  .media-preview-backdrop { height: 150px; }
+  .media-preview-content { grid-template-columns: 105px minmax(0, 1fr); gap: 15px; padding: 0 17px 22px; margin-top: -48px; }
+  .media-preview-copy { padding-top: 56px; }
+  .media-preview-copy h2 { font-size: 1.35rem; }
+  .media-preview-overview { grid-column: 1 / -1; margin-top: 12px; font-size: .82rem; }
+  .media-preview-actions { grid-column: 1 / -1; }
+  .media-preview-actions .button { flex: 1; }
+  .media-collection-section, .media-series-section { padding: 20px 17px 23px; }
+  .media-collection-list { grid-auto-columns: minmax(220px, 78vw); }
+  .media-collection-part { grid-template-columns: 68px minmax(0, 1fr); }
+  .media-collection-part > img, .media-collection-placeholder { width: 68px; height: 102px; }
+  .media-season-tab { min-height: 36px; padding: 7px 3px; font-size: .64rem; }
+  .media-episode { grid-template-columns: 88px minmax(0, 1fr); }
+  .media-episode-still, .media-episode-placeholder { width: 88px; height: 54px; }
+  .media-episode-copy { padding: 9px 9px 9px 0; }
   .book-grid:not(.search-grid) .book-card { position: relative; border-radius: 10px; }
   .book-grid:not(.search-grid) .book-cover-wrap { aspect-ratio: 2 / 3; }
   .book-grid:not(.search-grid) .book-cover { padding: 6px; filter: drop-shadow(0 4px 7px rgba(0,0,0,.35)); }

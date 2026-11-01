@@ -60,6 +60,7 @@ def _catalogue_settings():
 
     limits = {
         "review": integer_default("reviewMaxLength", 1000, 1, 50000),
+        "season_tabs": integer_default("seasonTabsPerRow", 6, 1, 12),
         "search": integer_default("searchMaxLength", 250, 2, 1000),
         "title": integer_default("bookTitleMaxLength", 300, 1, 5000),
         "authors": integer_default("bookAuthorsMaxLength", 500, 1, 5000),
@@ -88,7 +89,9 @@ def create_app(test_config=None):
         BOOK_PROVIDER=primary_provider,
         BOOK_FALLBACK_PROVIDER=fallback_provider,
         BOOK_PROVIDER_MODE=provider_mode,
+        TMDB_READ_ACCESS_TOKEN=os.environ.get("TMDB_READ_ACCESS_TOKEN", "").strip(),
         REVIEW_MAX_LENGTH=limits["review"],
+        SEASON_TABS_PER_ROW=limits["season_tabs"],
         SEARCH_MAX_LENGTH=limits["search"],
         BOOK_TITLE_MAX_LENGTH=limits["title"],
         BOOK_AUTHORS_MAX_LENGTH=limits["authors"],
@@ -160,6 +163,7 @@ def create_app(test_config=None):
             "index.html",
             build_version=app.config["BUILD_VERSION"],
             review_max_length=app.config["REVIEW_MAX_LENGTH"],
+            season_tabs_per_row=app.config["SEASON_TABS_PER_ROW"],
             search_max_length=app.config["SEARCH_MAX_LENGTH"],
             book_title_max_length=app.config["BOOK_TITLE_MAX_LENGTH"],
             book_authors_max_length=app.config["BOOK_AUTHORS_MAX_LENGTH"],
@@ -210,7 +214,7 @@ def create_app(test_config=None):
         start_series_worker(app)
 
     app.logger.info(
-        "Bookypedia wurde gestartet",
+        "Moviepedia wurde gestartet",
         extra={
             "event": "app_started",
             "provider": app.config["BOOK_PROVIDER"],
