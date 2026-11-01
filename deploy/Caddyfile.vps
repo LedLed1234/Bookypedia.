@@ -3,6 +3,10 @@ epiloguehouse.de {
     reverse_proxy 127.0.0.1:8000
 }
 
+books.epiloguehouse.de {
+    redir https://epiloguehouse.de{uri} permanent
+}
+
 movies.epiloguehouse.de {
     encode zstd gzip
     reverse_proxy 127.0.0.1:8001

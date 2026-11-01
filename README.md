@@ -117,6 +117,15 @@ Auf dem VPS laufen zwei getrennte Checkouts desselben Git-Remotes:
 - `/opt/bookypedia` auf Branch `main`, intern auf `127.0.0.1:8000`
 - `/opt/moviepedia` auf Branch `movies`, intern auf `127.0.0.1:8001`
 
+Der bestehende Bookypedia-Checkout bleibt erhalten. Moviepedia wird aus
+demselben Remote direkt nach `/opt/moviepedia` geklont:
+
+```bash
+repo_url="$(sudo git -C /opt/bookypedia remote get-url origin)"
+sudo git clone --branch movies --single-branch \
+  "${repo_url}" /opt/moviepedia
+```
+
 Bookypedia verwendet in `/opt/bookypedia/.env` mindestens:
 
 ```dotenv
@@ -126,8 +135,21 @@ SESSION_COOKIE_SECURE=1
 TRUST_PROXY=1
 ```
 
-Moviepedia verwendet eine eigene `.env` mit eigenem `SECRET_KEY`, Port `8001`
-und dem TMDB-Token. Beide Apps werden als getrennte Compose-Projekte gestartet:
+Moviepedia verwendet in `/opt/moviepedia/.env` einen eigenen `SECRET_KEY`,
+Port `8001` und den TMDB-Token:
+
+```dotenv
+SECRET_KEY=anderer-eigener-zufaelliger-wert
+APP_PORT=8001
+SESSION_COOKIE_SECURE=1
+TRUST_PROXY=1
+TMDB_READ_ACCESS_TOKEN=dein-tmdb-read-access-token
+```
+
+Zufällige Schlüssel lassen sich jeweils mit `openssl rand -hex 32` erzeugen.
+Die echten `.env`-Dateien und Tokens niemals committen. Beide Apps werden als
+getrennte Compose-Projekte gestartet, sodass auch ihre SQLite-Volumes getrennt
+bleiben:
 
 ```bash
 sudo docker compose --env-file /opt/bookypedia/.env -p bookypedia \
@@ -142,6 +164,63 @@ curl -fsS http://127.0.0.1:8001/health
 Nur der zentrale Caddy-Dienst des VPS belegt Ports 80 und 443. Seine
 Konfiguration liegt in `deploy/Caddyfile.vps`. `compose.public.yaml` wird beim
 gemeinsamen Betrieb beider Apps nicht verwendet.
+
+- `https://epiloguehouse.de` stellt Bookypedia bereit.
+- `https://books.epiloguehouse.de` leitet dauerhaft auf Bookypedia weiter.
+- `https://movies.epiloguehouse.de` stellt Moviepedia bereit.
+
+### Gemeinsamer Reverse Proxy
+
+Vor der Umstellung müssen `epiloguehouse.de`, `books.epiloguehouse.de` und
+`movies.epiloguehouse.de` per DNS auf den VPS zeigen. Die Auflösung lässt sich
+so prüfen:
+
+```bash
+dig +short epiloguehouse.de A
+dig +short books.epiloguehouse.de A
+dig +short movies.epiloguehouse.de A
+```
+
+Bei einer bestehenden Installation zunächst Caddy herunterladen, ohne den noch
+laufenden Docker-Caddy zu verändern:
+
+```bash
+sudo apt update
+sudo apt install --download-only caddy
+```
+
+Für die eigentliche Umstellung den Deploy-Timer vorübergehend stoppen, den alten
+Docker-Caddy anhalten und den Host-Caddy aktivieren:
+
+```bash
+sudo systemctl stop epiloguehouse-deploy.timer
+sudo docker stop bookypedia-caddy-1
+
+sudo apt install -y caddy
+sudo install -m 0644 /opt/bookypedia/deploy/Caddyfile.vps \
+  /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl restart caddy
+
+curl -fsS https://epiloguehouse.de/health
+curl -fsSI https://books.epiloguehouse.de
+curl -fsS https://movies.epiloguehouse.de/health
+```
+
+Erst wenn beide HTTPS-Tests erfolgreich sind, den alten Container entfernen:
+
+```bash
+sudo docker rm bookypedia-caddy-1
+sudo systemctl enable --now caddy
+```
+
+Falls der Host-Caddy nicht startet, kann auf den vorherigen Zustand
+zurückgewechselt werden:
+
+```bash
+sudo systemctl stop caddy
+sudo docker start bookypedia-caddy-1
+```
 
 ## VPS manuell aktualisieren
 
@@ -200,13 +279,25 @@ cat /var/lib/epiloguehouse-deploy/bookypedia-deployed-commit
 cat /var/lib/epiloguehouse-deploy/moviepedia-deployed-commit
 ```
 
-Wenn das Deploy-Skript selbst geändert wurde, die installierte Kopie erneut
-aktualisieren:
+Änderungen an den Deployment-Dateien werden nicht automatisch in
+`/usr/local/sbin` beziehungsweise `/etc` installiert. Nach solchen Änderungen
+die installierten Kopien aktualisieren:
 
 ```bash
 cd /opt/bookypedia
+
 sudo install -m 0755 deploy/epiloguehouse-auto-deploy \
   /usr/local/sbin/epiloguehouse-auto-deploy
+sudo install -m 0644 deploy/epiloguehouse-deploy.service \
+  /etc/systemd/system/epiloguehouse-deploy.service
+sudo install -m 0644 deploy/epiloguehouse-deploy.timer \
+  /etc/systemd/system/epiloguehouse-deploy.timer
+sudo install -m 0644 deploy/Caddyfile.vps /etc/caddy/Caddyfile
+
+sudo systemctl daemon-reload
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+sudo systemctl restart epiloguehouse-deploy.timer
 ```
 
 ## Konten verwalten
@@ -236,6 +327,22 @@ docker compose --env-file .env -p bookypedia -f compose.prod.yaml exec app \
   flask --app run.py user activate freund
 ```
 
+Moviepedia besitzt eine eigene Datenbank und deshalb eigene Benutzerkonten. Auf
+dem VPS, ausgeführt unter `/opt/moviepedia`:
+
+```bash
+docker compose --env-file .env -p moviepedia -f compose.prod.yaml exec app \
+  flask --app run.py user list
+docker compose --env-file .env -p moviepedia -f compose.prod.yaml exec app \
+  flask --app run.py user create freund
+docker compose --env-file .env -p moviepedia -f compose.prod.yaml exec app \
+  flask --app run.py user reset-password freund
+docker compose --env-file .env -p moviepedia -f compose.prod.yaml exec app \
+  flask --app run.py user deactivate freund
+docker compose --env-file .env -p moviepedia -f compose.prod.yaml exec app \
+  flask --app run.py user activate freund
+```
+
 ## Produktionslogs
 
 ```bash
@@ -255,6 +362,9 @@ LOG_LEVEL=DEBUG docker compose up
 
 ## Datenbank sichern
 
+Bookypedia und Moviepedia verwenden getrennte Compose-Projekte und damit
+getrennte Datenbanken. Lokal wird die Datenbank so gesichert:
+
 ```bash
 mkdir -p backups
 docker compose stop app
@@ -263,7 +373,29 @@ docker compose run --rm --no-deps -v "$PWD/backups:/backup" app \
 docker compose start app
 ```
 
-Wiederherstellen:
+Auf dem VPS Bookypedia unter `/opt/bookypedia` sichern:
+
+```bash
+sudo mkdir -p backups
+sudo docker compose --env-file .env -p bookypedia -f compose.prod.yaml stop app
+sudo docker compose --env-file .env -p bookypedia -f compose.prod.yaml \
+  run --rm --no-deps -v "$PWD/backups:/backup" app \
+  python -c "import sqlite3; s=sqlite3.connect('/data/readmore.db'); t=sqlite3.connect('/backup/bookypedia-backup.db'); s.backup(t); t.close(); s.close()"
+sudo docker compose --env-file .env -p bookypedia -f compose.prod.yaml start app
+```
+
+Moviepedia unter `/opt/moviepedia` entsprechend separat sichern:
+
+```bash
+sudo mkdir -p backups
+sudo docker compose --env-file .env -p moviepedia -f compose.prod.yaml stop app
+sudo docker compose --env-file .env -p moviepedia -f compose.prod.yaml \
+  run --rm --no-deps -v "$PWD/backups:/backup" app \
+  python -c "import sqlite3; s=sqlite3.connect('/data/readmore.db'); t=sqlite3.connect('/backup/moviepedia-backup.db'); s.backup(t); t.close(); s.close()"
+sudo docker compose --env-file .env -p moviepedia -f compose.prod.yaml start app
+```
+
+Lokal wiederherstellen:
 
 ```bash
 docker compose stop app
