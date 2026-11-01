@@ -76,8 +76,8 @@ git push
 ```
 
 Ist der automatische VPS-Deploy aktiv, sind danach keine weiteren Schritte
-nötig. Der VPS prüft `main` alle zwei Minuten und baut nur bei einem neuen
-Commit.
+nötig. Der VPS prüft `main` und `movies` alle fünf Minuten und baut nur die App
+mit einem neuen Commit.
 
 ## Android lokal testen
 
@@ -112,31 +112,48 @@ Weitere Android-Befehle: [mobile/README.md](mobile/README.md)
 
 ## VPS erstmalig einrichten
 
-Produktionsverzeichnis: `/opt/bookypedia`
+Auf dem VPS laufen zwei getrennte Checkouts desselben Git-Remotes:
 
-```bash
-cd /opt/bookypedia
-cp .env.example .env
-openssl rand -hex 32
+- `/opt/bookypedia` auf Branch `main`, intern auf `127.0.0.1:8000`
+- `/opt/moviepedia` auf Branch `movies`, intern auf `127.0.0.1:8001`
+
+Bookypedia verwendet in `/opt/bookypedia/.env` mindestens:
+
+```dotenv
+SECRET_KEY=eigener-zufaelliger-wert
+APP_PORT=8000
+SESSION_COOKIE_SECURE=1
+TRUST_PROXY=1
 ```
 
-Den erzeugten Wert als `SECRET_KEY` in `.env` eintragen und außerdem
-`BOOKYPEDIA_DOMAIN=epiloguehouse.de` setzen. Danach:
+Moviepedia verwendet eine eigene `.env` mit eigenem `SECRET_KEY`, Port `8001`
+und dem TMDB-Token. Beide Apps werden als getrennte Compose-Projekte gestartet:
 
 ```bash
-docker compose -f compose.prod.yaml -f compose.public.yaml up --build -d
-docker compose -f compose.prod.yaml -f compose.public.yaml ps
+sudo docker compose --env-file /opt/bookypedia/.env -p bookypedia \
+  -f /opt/bookypedia/compose.prod.yaml up --build -d
+sudo docker compose --env-file /opt/moviepedia/.env -p moviepedia \
+  -f /opt/moviepedia/compose.prod.yaml up --build -d
+
 curl -fsS http://127.0.0.1:8000/health
+curl -fsS http://127.0.0.1:8001/health
 ```
+
+Nur der zentrale Caddy-Dienst des VPS belegt Ports 80 und 443. Seine
+Konfiguration liegt in `deploy/Caddyfile.vps`. `compose.public.yaml` wird beim
+gemeinsamen Betrieb beider Apps nicht verwendet.
 
 ## VPS manuell aktualisieren
 
 ```bash
 ssh bookypedia-vps
-cd /opt/bookypedia
-git pull --ff-only
-docker compose -f compose.prod.yaml -f compose.public.yaml up --build -d
-docker compose -f compose.prod.yaml -f compose.public.yaml ps
+sudo git -C /opt/bookypedia pull --ff-only origin main
+sudo docker compose --env-file /opt/bookypedia/.env -p bookypedia \
+  -f /opt/bookypedia/compose.prod.yaml up --build -d
+
+sudo git -C /opt/moviepedia pull --ff-only origin movies
+sudo docker compose --env-file /opt/moviepedia/.env -p moviepedia \
+  -f /opt/moviepedia/compose.prod.yaml up --build -d
 ```
 
 ## Automatisches VPS-Deployment
@@ -178,10 +195,9 @@ systemctl show epiloguehouse-deploy.service \
   -p Result \
   -p ExecMainStatus
 
-### Den zuletzt erfolgreich übernommenen Commit siehst du so:
-cd /opt/bookypedia
-cat /var/lib/epiloguehouse-deploy/deployed-commit
-git log -1 --format='%h · %ad · %s' --date='format:%d.%m.%Y %H:%M:%S'
+### Die zuletzt erfolgreich übernommenen Commits:
+cat /var/lib/epiloguehouse-deploy/bookypedia-deployed-commit
+cat /var/lib/epiloguehouse-deploy/moviepedia-deployed-commit
 ```
 
 Wenn das Deploy-Skript selbst geändert wurde, die installierte Kopie erneut
@@ -208,23 +224,26 @@ docker compose exec app flask --app run.py user activate freund
 Auf dem VPS, ausgeführt unter `/opt/bookypedia`:
 
 ```bash
-docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+docker compose --env-file .env -p bookypedia -f compose.prod.yaml exec app \
   flask --app run.py user list
-docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+docker compose --env-file .env -p bookypedia -f compose.prod.yaml exec app \
   flask --app run.py user create freund
-docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+docker compose --env-file .env -p bookypedia -f compose.prod.yaml exec app \
   flask --app run.py user reset-password freund
-docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+docker compose --env-file .env -p bookypedia -f compose.prod.yaml exec app \
   flask --app run.py user deactivate freund
-docker compose -f compose.prod.yaml -f compose.public.yaml exec app \
+docker compose --env-file .env -p bookypedia -f compose.prod.yaml exec app \
   flask --app run.py user activate freund
 ```
 
 ## Produktionslogs
 
 ```bash
-cd /opt/bookypedia
-docker compose -f compose.prod.yaml -f compose.public.yaml logs -f app caddy
+sudo docker compose --env-file /opt/bookypedia/.env -p bookypedia \
+  -f /opt/bookypedia/compose.prod.yaml logs -f app
+sudo docker compose --env-file /opt/moviepedia/.env -p moviepedia \
+  -f /opt/moviepedia/compose.prod.yaml logs -f app
+sudo journalctl -fu caddy
 sudo journalctl -fu epiloguehouse-deploy.service
 ```
 

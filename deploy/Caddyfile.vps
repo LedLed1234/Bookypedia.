@@ -1,0 +1,9 @@
+epiloguehouse.de {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8000
+}
+
+movies.epiloguehouse.de {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8001
+}
