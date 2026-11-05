@@ -64,6 +64,11 @@ const state = {
   filter: "all",
   mediaType: "all",
   showSeasons: false,
+  libraryMode: "all",
+  movieCollectionIndex: new Map(),
+  movieCollectionLoading: false,
+  activeCollectionKey: null,
+  expandedMissingCollectionKeys: new Set(),
   sort: "added_desc",
   searchLimit: 4,
   lastSearchQuery: "",
@@ -94,6 +99,8 @@ const sortMenu = document.querySelector("#sort-menu");
 const mediaTypeButton = document.querySelector("#media-type-button");
 const mediaTypeButtonLabel = document.querySelector("#media-type-button-label");
 const mediaTypeMenu = document.querySelector("#media-type-menu");
+const collectionGroupingButton = document.querySelector("#collection-grouping-button");
+const collectionGroupingButtonLabel = document.querySelector("#collection-grouping-button-label");
 const seasonVisibilityButton = document.querySelector("#season-visibility-button");
 const deleteDialog = document.querySelector("#delete-dialog");
 const confirmDeleteButton = document.querySelector("#confirm-delete");
@@ -101,6 +108,10 @@ const previewDialog = document.querySelector("#media-preview-dialog");
 const previewAddButton = document.querySelector("#media-preview-add");
 const seasonDialog = document.querySelector("#media-season-dialog");
 const seasonDialogContent = document.querySelector("#media-season-dialog-content");
+const libraryCollectionDialog = document.querySelector("#media-library-collection-dialog");
+const libraryCollectionSavedList = document.querySelector("#media-library-collection-saved");
+const libraryCollectionMissing = document.querySelector("#media-library-collection-missing");
+const libraryCollectionMissingList = document.querySelector("#media-library-collection-missing-list");
 const ratingDialog = document.querySelector("#media-rating-dialog");
 const ratingForm = document.querySelector("#media-rating-form");
 const reviewInput = document.querySelector("#media-review");
@@ -290,6 +301,9 @@ function statusSelect(media) {
       });
       Object.assign(media, media.item_type === "season" ? payload.season : payload.media);
       renderLibrary();
+      if (libraryCollectionDialog.open && state.activeCollectionKey) {
+        renderLibraryCollectionDialog(state.activeCollectionKey);
+      }
       if (!searchPanel.hidden) renderSearchResults();
       showToast(`„${media.title}“ ist jetzt unter „${STATUS_LABELS[media.status]}“.`);
     } catch (error) {
@@ -454,6 +468,240 @@ function libraryCard(media) {
   return article;
 }
 
+function movieCollectionFor(media) {
+  if (!media || media.media_type !== "movie") return null;
+  return state.movieCollectionIndex.get(media.id) || null;
+}
+
+function movieCollectionKey(media) {
+  const collection = movieCollectionFor(media);
+  return collection?.tmdb_id ? String(collection.tmdb_id) : null;
+}
+
+function movieCollectionCard(collection, movies) {
+  const article = document.createElement("article");
+  article.className = "book-card media-library-card movie-collection-card series-collection-card";
+  const collectionKey = String(collection.tmdb_id);
+
+  const cover = document.createElement("div");
+  cover.className = "book-cover-wrap series-cover-stack media-info-trigger";
+  cover.tabIndex = 0;
+  cover.setAttribute("role", "button");
+  cover.setAttribute("aria-label", `${collection.name} öffnen`);
+  const coveredMovies = movies.filter((movie) => movie.cover_url).slice(0, 3);
+  if (coveredMovies.length) {
+    coveredMovies.forEach((movie) => {
+      const image = document.createElement("img");
+      image.className = "series-stack-cover";
+      image.src = movie.cover_url;
+      image.alt = "";
+      image.loading = "lazy";
+      image.addEventListener("error", () => image.remove(), { once: true });
+      cover.append(image);
+    });
+  } else {
+    cover.append(posterPlaceholder(collection.name));
+  }
+  const badge = document.createElement("span");
+  badge.className = "series-collection-badge";
+  badge.textContent = "Filmreihe";
+  cover.append(badge);
+
+  const open = () => openLibraryCollectionDialog(collectionKey);
+  cover.addEventListener("click", open);
+  cover.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    open();
+  });
+
+  const body = document.createElement("div");
+  body.className = "book-body";
+  const meta = document.createElement("div");
+  meta.className = "book-meta";
+  const title = document.createElement("h3");
+  title.className = "book-title";
+  const titleButton = document.createElement("button");
+  titleButton.className = "book-title-link";
+  titleButton.type = "button";
+  titleButton.textContent = collection.name;
+  titleButton.addEventListener("click", open);
+  title.append(titleButton);
+  const count = document.createElement("p");
+  count.className = "book-author";
+  const savedCount = collection.parts.filter((part) => savedMedia(part)).length;
+  count.textContent = `${savedCount} von ${collection.parts.length} gespeichert`;
+  const titles = document.createElement("p");
+  titles.className = "series-title-preview";
+  const scope = state.filter === "all" ? "in deiner Sammlung" : `unter ${STATUS_LABELS[state.filter]}`;
+  titles.textContent = `${movies.length} ${movies.length === 1 ? "Film" : "Filme"} ${scope}`;
+  meta.append(title, count, titles);
+  const button = document.createElement("button");
+  button.className = "button button-secondary";
+  button.type = "button";
+  button.textContent = "Filmreihe öffnen";
+  button.addEventListener("click", open);
+  body.append(meta, button);
+  article.append(cover, body);
+  return article;
+}
+
+function collectionMovieRow(movie) {
+  const row = document.createElement("div");
+  row.className = "media-library-collection-row";
+  const poster = posterElement(movie);
+  poster.classList.add("media-library-collection-poster", "media-info-trigger");
+  poster.tabIndex = 0;
+  poster.setAttribute("role", "button");
+  poster.setAttribute("aria-label", `Informationen zu ${movie.title}`);
+  const openInfo = () => {
+    libraryCollectionDialog.close();
+    openMediaPreview(movie, true);
+  };
+  poster.addEventListener("click", openInfo);
+  poster.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openInfo();
+  });
+
+  const copy = document.createElement("div");
+  copy.className = "media-library-collection-copy";
+  const title = document.createElement("strong");
+  title.textContent = movie.title;
+  const details = document.createElement("span");
+  details.textContent = [movie.release_year, movie.rating ? `Deine Wertung: ${movie.rating}/5` : null]
+    .filter(Boolean).join(" · ") || "Film";
+  copy.append(title, details);
+
+  const actions = document.createElement("div");
+  actions.className = "media-library-collection-actions";
+  actions.append(statusSelect(movie));
+  const rate = document.createElement("button");
+  rate.className = "icon-button media-rate-button";
+  rate.classList.toggle("rated", Boolean(movie.rating));
+  rate.type = "button";
+  rate.textContent = movie.rating ? "★" : "☆";
+  rate.setAttribute("aria-label", `${movie.title} bewerten`);
+  rate.addEventListener("click", () => {
+    libraryCollectionDialog.close();
+    openRatingDialog(movie);
+  });
+  const info = document.createElement("button");
+  info.className = "icon-button";
+  info.type = "button";
+  info.textContent = document.documentElement.dataset.bookInfoSymbol || "!";
+  info.setAttribute("aria-label", `Informationen zu ${movie.title}`);
+  info.addEventListener("click", openInfo);
+  const remove = document.createElement("button");
+  remove.className = "icon-button remove-book-button";
+  remove.type = "button";
+  remove.textContent = "×";
+  remove.setAttribute("aria-label", `${movie.title} aus der Sammlung entfernen`);
+  remove.addEventListener("click", () => {
+    libraryCollectionDialog.close();
+    openDeleteDialog(movie);
+  });
+  actions.append(rate, info, remove);
+  row.append(poster, copy, actions);
+  return row;
+}
+
+function collectionPartRow(part) {
+  const saved = savedMedia(part);
+  if (saved) return collectionMovieRow(saved);
+
+  const row = document.createElement("div");
+  row.className = "media-library-collection-row unsaved";
+  const poster = posterElement(part);
+  poster.classList.add("media-library-collection-poster", "media-info-trigger");
+  poster.tabIndex = 0;
+  poster.setAttribute("role", "button");
+  poster.setAttribute("aria-label", `Informationen zu ${part.title}`);
+  const openInfo = () => {
+    libraryCollectionDialog.close();
+    openMediaPreview(part);
+  };
+  poster.addEventListener("click", openInfo);
+  poster.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openInfo();
+  });
+
+  const copy = document.createElement("div");
+  copy.className = "media-library-collection-copy";
+  const title = document.createElement("strong");
+  title.textContent = part.title;
+  const details = document.createElement("span");
+  details.textContent = [
+    part.collection_position ? `Film ${part.collection_position}` : null,
+    part.release_year || "Jahr unbekannt",
+    "Noch nicht gespeichert",
+  ].filter(Boolean).join(" · ");
+  copy.append(title, details);
+
+  const actions = document.createElement("div");
+  actions.className = "media-library-collection-actions unsaved-actions";
+  const add = document.createElement("button");
+  add.className = "button button-primary media-collection-add";
+  add.type = "button";
+  add.textContent = "＋ Watchlist";
+  add.addEventListener("click", async () => {
+    await addToWatchlist(part, add);
+    if (libraryCollectionDialog.open && state.activeCollectionKey) {
+      renderLibraryCollectionDialog(state.activeCollectionKey);
+    }
+  });
+  const info = document.createElement("button");
+  info.className = "icon-button";
+  info.type = "button";
+  info.textContent = document.documentElement.dataset.bookInfoSymbol || "!";
+  info.setAttribute("aria-label", `Informationen zu ${part.title}`);
+  info.addEventListener("click", openInfo);
+  actions.append(add, info);
+  row.append(poster, copy, actions);
+  return row;
+}
+
+function movieCollectionByKey(collectionKey) {
+  for (const collection of state.movieCollectionIndex.values()) {
+    if (collection?.tmdb_id && String(collection.tmdb_id) === collectionKey) return collection;
+  }
+  return null;
+}
+
+function renderLibraryCollectionDialog(collectionKey) {
+  const collection = movieCollectionByKey(collectionKey);
+  if (!collection) {
+    if (libraryCollectionDialog.open) libraryCollectionDialog.close();
+    return;
+  }
+  const saved = [];
+  const missing = [];
+  collection.parts.forEach((part) => {
+    const stored = savedMedia(part);
+    if (stored) saved.push(stored);
+    else missing.push(part);
+  });
+  document.querySelector("#media-library-collection-title").textContent = collection.name;
+  document.querySelector("#media-library-collection-count").textContent = `${saved.length} von ${collection.parts.length} gespeichert`;
+  libraryCollectionSavedList.replaceChildren(...saved.map(collectionMovieRow));
+  document.querySelector("#media-library-collection-missing-label").textContent = missing.length === 1
+    ? "1 Film noch nicht gespeichert"
+    : `${missing.length} Filme noch nicht gespeichert`;
+  libraryCollectionMissing.hidden = missing.length === 0;
+  libraryCollectionMissing.open = missing.length > 0
+    && state.expandedMissingCollectionKeys.has(collectionKey);
+  libraryCollectionMissingList.replaceChildren(...missing.map(collectionPartRow));
+}
+
+function openLibraryCollectionDialog(collectionKey) {
+  state.activeCollectionKey = collectionKey;
+  renderLibraryCollectionDialog(collectionKey);
+  if (!libraryCollectionDialog.open) libraryCollectionDialog.showModal();
+}
+
 function renderSearchResults() {
   searchResults.replaceChildren();
   if (!state.searchResults.length) {
@@ -500,6 +748,101 @@ function filteredAndSortedMedia() {
     const order = String(left.created_at).localeCompare(String(right.created_at)) || left.id - right.id;
     return state.sort === "added_asc" ? order : -order;
   });
+}
+
+function renderGroupedLibrary(visible) {
+  const groupedMovies = new Map();
+  visible.forEach((media) => {
+    const collectionKey = movieCollectionKey(media);
+    if (!collectionKey) return;
+    if (!groupedMovies.has(collectionKey)) groupedMovies.set(collectionKey, []);
+    groupedMovies.get(collectionKey).push(media);
+  });
+
+  const renderedCollections = new Set();
+  visible.forEach((media) => {
+    const collectionKey = movieCollectionKey(media);
+    if (!collectionKey) {
+      mediaGrid.append(libraryCard(media));
+      return;
+    }
+    if (renderedCollections.has(collectionKey)) return;
+    renderedCollections.add(collectionKey);
+    mediaGrid.append(movieCollectionCard(movieCollectionFor(media), groupedMovies.get(collectionKey)));
+  });
+  return renderedCollections.size;
+}
+
+async function ensureMovieCollectionIndex(movies) {
+  if (state.movieCollectionLoading) return;
+  const savedByTmdbId = new Map(
+    state.media.filter((media) => media.media_type === "movie")
+      .map((media) => [Number(media.tmdb_id), media]),
+  );
+  const knownCollections = new Map();
+  state.movieCollectionIndex.forEach((collection) => {
+    if (collection?.tmdb_id) knownCollections.set(String(collection.tmdb_id), collection);
+  });
+  knownCollections.forEach((collection) => {
+    collection.parts.forEach((part) => {
+      const stored = savedByTmdbId.get(Number(part.tmdb_id));
+      if (stored) state.movieCollectionIndex.set(stored.id, collection);
+    });
+  });
+  const unresolved = movies.filter((movie) => (
+    movie.media_type === "movie" && !state.movieCollectionIndex.has(movie.id)
+  ));
+  if (!unresolved.length) return;
+  state.movieCollectionLoading = true;
+  let cursor = 0;
+  const failedMovies = [];
+
+  async function worker() {
+    while (cursor < unresolved.length) {
+      const movie = unresolved[cursor];
+      cursor += 1;
+      if (state.movieCollectionIndex.has(movie.id)) continue;
+      try {
+        const payload = await api(`/api/media/${movie.id}/collection`);
+        const collection = payload.collection || null;
+        state.movieCollectionIndex.set(movie.id, collection);
+        collectionCache.set(mediaIdentity(movie), { collection, savedAt: Date.now() });
+        if (!collection) continue;
+        collection.parts.forEach((part) => {
+          const stored = savedByTmdbId.get(Number(part.tmdb_id));
+          if (!stored) return;
+          state.movieCollectionIndex.set(stored.id, collection);
+          collectionCache.set(mediaIdentity(stored), { collection, savedAt: Date.now() });
+        });
+      } catch (_error) {
+        failedMovies.push(movie);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(3, unresolved.length) }, () => worker()));
+  state.movieCollectionLoading = false;
+  const failures = failedMovies.filter((movie) => !state.movieCollectionIndex.has(movie.id)).length;
+  if (failures) {
+    showToast(`${failures} ${failures === 1 ? "Filmreihe konnte" : "Filmreihen konnten"} gerade nicht abgefragt werden.`, true);
+  }
+}
+
+async function setCollectionGrouping(grouped) {
+  state.libraryMode = grouped ? "collections" : "all";
+  collectionGroupingButton.setAttribute("aria-pressed", String(grouped));
+  if (!grouped) {
+    collectionGroupingButton.disabled = false;
+    collectionGroupingButtonLabel.textContent = "Filmreihen gruppieren";
+    renderLibrary();
+    return;
+  }
+  collectionGroupingButton.disabled = true;
+  collectionGroupingButtonLabel.textContent = "Filmreihen werden geladen …";
+  await ensureMovieCollectionIndex(state.media);
+  collectionGroupingButton.disabled = false;
+  collectionGroupingButtonLabel.textContent = "Alle einzeln anzeigen";
+  renderLibrary();
 }
 
 function openMediaPreview(media, infoOnly = false, seasonNumber = null) {
@@ -1021,11 +1364,20 @@ function updateCounts(visibleCount) {
 function renderLibrary() {
   const visible = filteredAndSortedMedia();
   mediaGrid.replaceChildren();
-  visible.forEach((media) => mediaGrid.append(libraryCard(media)));
+  let collectionCount = 0;
+  if (state.libraryMode === "collections") {
+    collectionCount = renderGroupedLibrary(visible);
+  } else {
+    visible.forEach((media) => mediaGrid.append(libraryCard(media)));
+  }
   loadingState.hidden = true;
   mediaGrid.hidden = visible.length === 0;
   emptyState.hidden = visible.length !== 0;
   updateCounts(visible.length);
+  if (collectionCount) {
+    const suffix = collectionCount === 1 ? "1 Filmreihe" : `${collectionCount} Filmreihen`;
+    document.querySelector("#view-count").textContent = `${visible.length} Titel · ${suffix}`;
+  }
 }
 
 async function loadMedia() {
@@ -1036,6 +1388,14 @@ async function loadMedia() {
   state.media = mediaPayload.media;
   state.seasons = seasonPayload.seasons;
   renderLibrary();
+  if (state.libraryMode === "collections") {
+    collectionGroupingButton.disabled = true;
+    collectionGroupingButtonLabel.textContent = "Filmreihen werden geladen …";
+    await ensureMovieCollectionIndex(state.media);
+    collectionGroupingButton.disabled = false;
+    collectionGroupingButtonLabel.textContent = "Alle einzeln anzeigen";
+    renderLibrary();
+  }
 }
 
 async function addToWatchlist(media, button) {
@@ -1214,6 +1574,41 @@ async function confirmDelete() {
   }
 }
 
+let dialogLockedScrollY = 0;
+
+function syncDialogScrollLock() {
+  const hasOpenDialog = [...document.querySelectorAll("dialog")].some((dialog) => dialog.open);
+  const root = document.documentElement;
+  const body = document.body;
+  const locked = root.classList.contains("dialog-scroll-locked");
+  if (hasOpenDialog && !locked) {
+    dialogLockedScrollY = window.scrollY;
+    root.classList.add("dialog-scroll-locked");
+    body.style.position = "fixed";
+    body.style.top = `-${dialogLockedScrollY}px`;
+    body.style.width = "100%";
+    return;
+  }
+  if (!hasOpenDialog && locked) {
+    root.classList.remove("dialog-scroll-locked");
+    body.style.position = "";
+    body.style.top = "";
+    body.style.width = "";
+    const previousScrollBehavior = root.style.scrollBehavior;
+    root.style.scrollBehavior = "auto";
+    window.scrollTo(0, dialogLockedScrollY);
+    root.style.scrollBehavior = previousScrollBehavior;
+  }
+}
+
+function initializeDialogScrollLock() {
+  const dialogObserver = new MutationObserver(syncDialogScrollLock);
+  document.querySelectorAll("dialog").forEach((dialog) => {
+    dialogObserver.observe(dialog, { attributes: true, attributeFilter: ["open"] });
+    dialog.addEventListener("close", syncDialogScrollLock);
+  });
+}
+
 searchForm.addEventListener("submit", (event) => {
   event.preventDefault();
   executeSearch(searchInput.value.trim());
@@ -1232,6 +1627,9 @@ themeOptions.forEach((option) => option.addEventListener("click", () => {
 sortButton.addEventListener("click", () => setSortMenu(sortMenu.hidden));
 mediaTypeButton.addEventListener("click", () => setMediaTypeMenu(mediaTypeMenu.hidden));
 seasonVisibilityButton.addEventListener("click", () => applySeasonVisibility(!state.showSeasons));
+collectionGroupingButton.addEventListener("click", () => {
+  setCollectionGrouping(state.libraryMode !== "collections");
+});
 document.querySelectorAll("[data-media-type-option]").forEach((option) => option.addEventListener("click", () => {
   applyMediaType(option.dataset.mediaTypeOption);
   setMediaTypeMenu(false);
@@ -1270,6 +1668,12 @@ seasonDialog.addEventListener("close", () => {
   state.previewSeason = null;
   restoreEpisodesPanel();
 });
+libraryCollectionDialog.addEventListener("close", () => { state.activeCollectionKey = null; });
+libraryCollectionMissing.addEventListener("toggle", () => {
+  if (!state.activeCollectionKey) return;
+  if (libraryCollectionMissing.open) state.expandedMissingCollectionKeys.add(state.activeCollectionKey);
+  else state.expandedMissingCollectionKeys.delete(state.activeCollectionKey);
+});
 ratingDialog.addEventListener("close", () => { state.ratingMedia = null; });
 document.querySelectorAll(".dialog-close").forEach((button) => button.addEventListener("click", () => button.closest("dialog").close()));
 document.querySelectorAll("dialog").forEach((dialog) => dialog.addEventListener("click", (event) => {
@@ -1282,6 +1686,7 @@ document.addEventListener("click", (event) => {
 });
 
 async function initializeApp() {
+  initializeDialogScrollLock();
   populateSettings();
   const storedTheme = localStorage.getItem("moviepedia-theme") || localStorage.getItem("bookypedia-theme") || "blue-white";
   const storedSort = localStorage.getItem("moviepedia-sort") || "added_desc";

@@ -2317,6 +2317,7 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="media-grid"' in html
     assert 'id="sort-button"' in html
     assert 'id="media-type-button"' in html
+    assert 'id="collection-grouping-button"' in html
     assert 'id="season-visibility-button"' in html
     assert 'aria-pressed="false"' in html
     assert 'data-media-type-option="movie"' in html
@@ -2331,12 +2332,24 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'id="media-season-dialog"' in html
     assert 'id="media-season-dialog-content"' in html
     assert 'id="media-season-dialog-poster"' in html
+    assert 'id="media-library-collection-dialog"' in html
+    assert 'id="media-library-collection-saved"' in html
+    assert 'id="media-library-collection-missing"' in html
+    assert 'id="media-library-collection-missing-list"' in html
     assert 'id="media-rating-dialog"' in html
     assert 'data-sort-option="rating_desc"' in html
     script = client.get("/static/js/media-app.js").get_data(as_text=True)
     assert "/api/media/search?q=${encodeURIComponent(query)}&limit=${state.searchLimit}" in script
     assert 'api("/api/media"' in script
     assert "function libraryCard(media)" in script
+    assert "function movieCollectionCard(collection, movies)" in script
+    assert "function collectionPartRow(part)" in script
+    assert "async function ensureMovieCollectionIndex(movies)" in script
+    assert "function renderLibraryCollectionDialog(collectionKey)" in script
+    assert "function openLibraryCollectionDialog(collectionKey)" in script
+    assert "state.expandedMissingCollectionKeys.has(collectionKey)" in script
+    assert 'addToWatchlist(part, add)' in script
+    assert "visible.forEach((media) => mediaGrid.append(libraryCard(media)))" in script
     assert "function openMediaPreview(media, infoOnly = false, seasonNumber = null)" in script
     assert "openMediaPreview(media, true)" in script
     assert "async function loadMovieCollection(media)" in script
@@ -2356,6 +2369,7 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert 'localStorage.setItem("moviepedia-media-type"' in script
     assert "dataset.bookInfoSymbol" in script
     assert "async function saveRating(event)" in script
+    assert "function initializeDialogScrollLock()" in script
     assert 'localStorage.setItem("moviepedia-start-view"' in script
     assert 'data-sort-option="title_asc"' in html
     assert 'data-sort-option="title_desc"' in html

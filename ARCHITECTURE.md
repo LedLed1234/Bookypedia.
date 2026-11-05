@@ -18,16 +18,16 @@ dasselbe Backend. Capacitor stellt lediglich den nativen Android-Wrapper bereit.
 
 ## Komponenten
 
-| Bereich | Technik | Aufgabe |
-| --- | --- | --- |
-| Backend | Flask | Seiten, Authentifizierung und JSON-API |
-| Produktion | Gunicorn | WSGI-Server für Flask |
-| Reverse Proxy | Caddy | Domain, HTTPS und Zertifikate |
-| Datenbank | SQLite | Konten, Bibliotheken, Metadaten und Caches |
-| Medienkatalog | TMDB | Film- und Seriensuche, Poster und lokalisierte Metadaten |
-| Katalog | Open Library | Suche, Ausgaben, Cover und Reihen |
-| Android | Capacitor | Native Hülle um die Web-App |
-| Betrieb | Docker Compose | Entwicklung und Produktion |
+| Bereich       | Technik        | Aufgabe                                                  |
+| ------------- | -------------- | -------------------------------------------------------- |
+| Backend       | Flask          | Seiten, Authentifizierung und JSON-API                   |
+| Produktion    | Gunicorn       | WSGI-Server für Flask                                    |
+| Reverse Proxy | Caddy          | Domain, HTTPS und Zertifikate                            |
+| Datenbank     | SQLite         | Konten, Bibliotheken, Metadaten und Caches               |
+| Medienkatalog | TMDB           | Film- und Seriensuche, Poster und lokalisierte Metadaten |
+| Katalog       | Open Library   | Suche, Ausgaben, Cover und Reihen                        |
+| Android       | Capacitor      | Native Hülle um die Web-App                              |
+| Betrieb       | Docker Compose | Entwicklung und Produktion                               |
 
 ## Umgebungen
 
@@ -63,22 +63,22 @@ einem eigenen Volume `readmore_prod_data`.
 
 Wichtige Tabellen:
 
-| Tabelle | Inhalt |
-| --- | --- |
-| `users` | Konten, Passwort-Hash, Aktivstatus und Sitzungs-Version |
-| `media_items` | Filme und Serien pro Konto, TMDB-ID, Status, Bewertung, Review und Metadaten |
-| `episode_ratings` | Persönliche Episodenbewertungen pro Konto, Serie, Staffel und Episode |
-| `saved_seasons` | Separat gespeicherte Staffeln mit Status und TMDB-Metadaten pro Konto |
-| `books` | Bücher einer Person, Status, Bewertung und Metadaten |
-| `series` | gemeinsam gecachte Reihen |
-| `series_members` | Bücher und Positionen innerhalb einer Reihe |
-| `book_series` | Zuordnung gespeicherter Bücher zu Reihen |
-| `series_lookups` | Status und Wiederholungen der Reihenabfragen |
-| `metadata_lookups` | Status und Wiederholungen der Metadatenabfragen |
-| `book_metadata_cache` | gecachte Ausgabedetails der Buchanbieter |
-| `catalogue_search_cache` | persistente, anbieterbezogene Suchergebnisse |
-| `tmdb_cache` | persistente TMDB-Suchen, Filmreihen, Staffellisten und Episodendetails |
-| `cover_cache` | externe Cover-Quellen und lokale Dateipfade |
+| Tabelle                  | Inhalt                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| `users`                  | Konten, Passwort-Hash, Aktivstatus und Sitzungs-Version                      |
+| `media_items`            | Filme und Serien pro Konto, TMDB-ID, Status, Bewertung, Review und Metadaten |
+| `episode_ratings`        | Persönliche Episodenbewertungen pro Konto, Serie, Staffel und Episode        |
+| `saved_seasons`          | Separat gespeicherte Staffeln mit Status und TMDB-Metadaten pro Konto        |
+| `books`                  | Bücher einer Person, Status, Bewertung und Metadaten                         |
+| `series`                 | gemeinsam gecachte Reihen                                                    |
+| `series_members`         | Bücher und Positionen innerhalb einer Reihe                                  |
+| `book_series`            | Zuordnung gespeicherter Bücher zu Reihen                                     |
+| `series_lookups`         | Status und Wiederholungen der Reihenabfragen                                 |
+| `metadata_lookups`       | Status und Wiederholungen der Metadatenabfragen                              |
+| `book_metadata_cache`    | gecachte Ausgabedetails der Buchanbieter                                     |
+| `catalogue_search_cache` | persistente, anbieterbezogene Suchergebnisse                                 |
+| `tmdb_cache`             | persistente TMDB-Suchen, Filmreihen, Staffellisten und Episodendetails       |
+| `cover_cache`            | externe Cover-Quellen und lokale Dateipfade                                  |
 
 SQLite-Migrationen werden beim Anwendungsstart in `readmore/db.py` ausgeführt.
 Historische Zeitpunkte werden dabei nicht erfunden.

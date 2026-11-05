@@ -344,6 +344,10 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .tmdb-attribution a { color: #01b4e4; font-weight: 900; letter-spacing: .06em; }
 .media-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
 .media-library-card { position: relative; }
+.movie-collection-card { border-color: color-mix(in srgb, var(--theme-border) 62%, var(--accent)); }
+.movie-collection-card .book-cover-wrap { position: relative; aspect-ratio: 4 / 3; }
+.movie-collection-card .series-stack-cover { width: min(30%, 88px); }
+.movie-collection-card .series-title-preview { -webkit-line-clamp: 3; }
 .media-library-card.season-library-card { border-color: color-mix(in srgb, var(--theme-border) 72%, var(--accent)); }
 .season-library-card .media-type-badge { color: var(--accent-ink); background: var(--accent); }
 .season-parent-title { margin: -2px 0 5px; color: var(--muted); font-size: .69rem; font-weight: 750; }
@@ -439,6 +443,29 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .media-season-dialog-overview { margin: 0; color: var(--text); font-size: .82rem; line-height: 1.55; }
 .media-season-dialog .media-episodes-panel { margin: 0; padding: 24px 30px 30px; border-top: 0; }
 .media-season-dialog .media-episodes-status { display: none; }
+.media-library-collection-dialog { width: min(760px, calc(100% - 28px)); overflow-y: auto; border: 1px solid var(--theme-border); }
+.media-library-collection-shell { gap: 14px; }
+.media-library-collection-count { margin: -7px 0 2px; color: var(--muted); font-size: .78rem; font-weight: 750; }
+.media-library-collection-section { display: grid; gap: 9px; }
+.media-library-collection-section h3 { margin: 0; font-size: .92rem; }
+.media-library-collection-list { display: grid; gap: 9px; }
+.media-library-collection-missing { border: 1px solid var(--theme-border); border-radius: 11px; overflow: hidden; }
+.media-library-collection-missing[hidden] { display: none; }
+.media-library-collection-missing > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 14px; color: var(--text); background: var(--soft-tint); font-size: .78rem; font-weight: 850; cursor: pointer; list-style: none; }
+.media-library-collection-missing > summary::-webkit-details-marker { display: none; }
+.media-library-collection-missing > summary::after { content: "+"; width: 26px; height: 26px; display: grid; place-items: center; flex: 0 0 auto; color: var(--accent-ink); background: var(--accent); border-radius: 99px; font-size: 1rem; }
+.media-library-collection-missing[open] > summary::after { content: "−"; }
+.media-library-collection-missing > .media-library-collection-list { padding: 9px; border-top: 1px solid var(--theme-border); }
+.media-library-collection-row { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px; background: var(--soft-tint); border: 1px solid var(--theme-border); border-radius: 11px; }
+.media-library-collection-poster { width: 58px; aspect-ratio: 2 / 3; border-radius: 7px; }
+.media-library-collection-poster .media-poster { padding: 0; object-fit: cover; filter: none; }
+.media-library-collection-copy { min-width: 0; display: grid; gap: 4px; }
+.media-library-collection-copy strong { overflow: hidden; font-size: .86rem; text-overflow: ellipsis; white-space: nowrap; }
+.media-library-collection-copy span { color: var(--muted); font-size: .7rem; }
+.media-library-collection-actions { display: flex; align-items: center; gap: 7px; }
+.media-library-collection-actions .status-select { width: 140px; }
+.media-library-collection-actions .icon-button { width: 38px; height: 38px; }
+.media-library-collection-actions.unsaved-actions .button { min-height: 38px; white-space: nowrap; }
 .media-episode { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 13px; min-width: 0; overflow: hidden; background: var(--soft-tint); border: 1px solid var(--theme-border); border-radius: 11px; }
 .media-episode-still, .media-episode-placeholder { width: 120px; height: 68px; object-fit: cover; align-self: start; }
 .media-episode-placeholder { display: grid; place-items: center; color: var(--muted); background: var(--surface-tint); font-size: .65rem; font-weight: 800; }
@@ -629,7 +656,7 @@ html.dialog-scroll-locked { overflow: hidden; }
 .platform-mobile #book-grid .rating-display,
 .platform-mobile #book-grid .review-excerpt,
 .platform-mobile #book-grid .card-actions,
-.platform-mobile #book-grid .series-collection-card .button { display: none; }
+.platform-mobile #book-grid .series-collection-card > .book-body > .button { display: none; }
 .platform-mobile #book-grid .book-meta { min-height: 0; margin-bottom: 0; }
 .platform-mobile #book-grid .book-body { flex: 0 0 auto; }
 .platform-mobile #book-grid .book-title { font-size: .86rem; line-height: 1.25; }
@@ -696,6 +723,7 @@ html.dialog-scroll-locked { overflow: hidden; }
   .search-card .book-cover-wrap { min-height: 190px; aspect-ratio: auto; padding: 10px; }
   .search-card .book-placeholder { width: 62px; }
   .media-grid:not(.search-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .media-grid:not(.search-grid) .movie-collection-card .book-cover-wrap { aspect-ratio: 4 / 3; }
   .media-info-button { top: 6px; right: 6px; width: 30px; height: 30px; font-size: .8rem; }
   .media-library-actions { grid-template-columns: 1fr 1fr; }
   .media-library-actions .status-select { grid-column: 1 / -1; }
@@ -724,6 +752,15 @@ html.dialog-scroll-locked { overflow: hidden; }
   .media-season-dialog .media-episodes-heading { align-items: flex-start; }
   .media-season-dialog .media-episodes-tools { align-items: flex-end; flex-direction: column; gap: 6px; }
   .media-season-dialog .media-episodes-list { max-height: none; padding-right: 0; overflow: visible; scrollbar-gutter: auto; }
+  .media-library-collection-dialog { width: calc(100% - 18px); max-height: calc(100dvh - 18px); }
+  .media-library-collection-shell { padding: 20px 14px 16px; }
+  .media-library-collection-missing > summary { padding: 11px 12px; font-size: .72rem; }
+  .media-library-collection-row { grid-template-columns: 48px minmax(0, 1fr); gap: 9px; padding: 9px; }
+  .media-library-collection-poster { width: 48px; }
+  .media-library-collection-actions { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 36px); }
+  .media-library-collection-actions.unsaved-actions { grid-template-columns: minmax(0, 1fr) 36px; }
+  .media-library-collection-actions .status-select { width: 100%; }
+  .media-library-collection-actions .icon-button { width: 36px; height: 36px; }
   .media-episode { grid-template-columns: 88px minmax(0, 1fr); }
   .media-episode-still, .media-episode-placeholder { width: 88px; height: 54px; }
   .media-episode-copy { padding: 9px 9px 9px 0; }
