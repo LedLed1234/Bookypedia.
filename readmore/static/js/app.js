@@ -57,6 +57,7 @@ const STATUS_HISTORY = [
 ];
 const titleCollator = new Intl.Collator("de", { sensitivity: "base", numeric: true });
 const monthFormatter = new Intl.DateTimeFormat("de-DE", { month: "long" });
+const monthNames = Array.from({ length: 12 }, (_, month) => monthFormatter.format(new Date(2000, month, 1)));
 
 const state = {
   books: [],
@@ -100,6 +101,9 @@ const statisticsView = document.querySelector("#statistics-view");
 const statisticsYear = document.querySelector("#statistics-year");
 const statisticsCount = document.querySelector("#statistics-count");
 const statisticsLoading = document.querySelector("#statistics-loading");
+const statisticsContent = document.querySelector("#statistics-content");
+const statisticsMonthCount = document.querySelector("#statistics-month-count");
+const statisticsBars = document.querySelector("#statistics-bars");
 const statisticsMonths = document.querySelector("#statistics-months");
 const statisticsEmpty = document.querySelector("#statistics-empty");
 const mainViewLinks = document.querySelectorAll("[data-main-view]");
@@ -1043,16 +1047,17 @@ function updateMainView(moveFocus = false) {
       link.removeAttribute("aria-current");
     }
   });
-  if (showStatistics) renderStatistics();
+  if (showStatistics) renderStatistics(true);
   if (moveFocus) {
     document.querySelector(showStatistics ? "#statistics-heading" : "#hero-title").focus({ preventScroll: true });
     window.scrollTo({ top: 0, behavior: "instant" });
   }
 }
 
-function renderStatistics() {
+function renderStatistics(resetMonths = false) {
   statisticsLoading.hidden = loadingState.hidden;
   statisticsYear.labels[0].hidden = !loadingState.hidden;
+  statisticsContent.hidden = !loadingState.hidden;
   if (!loadingState.hidden) {
     statisticsLoading.textContent = loadingState.textContent;
     return;
@@ -1072,27 +1077,79 @@ function renderStatistics() {
   const booksForYear = completions
     .filter(({ date }) => date.getFullYear() === selectedYear)
     .sort((a, b) => a.date - b.date);
-  const count = booksForYear.length;
-  statisticsCount.textContent = `${count} ${count === 1 ? "Buch" : "Bücher"} gelesen`;
-  statisticsEmpty.hidden = count > 0;
-  statisticsMonths.replaceChildren();
-
-  let previousMonth = -1;
-  let list;
-  for (const { book, date } of booksForYear) {
-    const month = date.getMonth();
-    if (month !== previousMonth) {
-      previousMonth = month;
-      const group = document.createElement("section");
-      const heading = document.createElement("h2");
-      heading.textContent = monthFormatter.format(date);
-      list = document.createElement("ul");
-      list.className = "statistics-book-list";
-      group.append(heading, list);
-      statisticsMonths.append(group);
-    }
-    list.append(statisticsBookRow(book, date));
+  const months = monthNames.map(() => []);
+  for (const completion of booksForYear) {
+    months[completion.date.getMonth()].push(completion);
   }
+
+  const keepMonths = !resetMonths && selectedYear === previousYear;
+  const selectedMonth = keepMonths ? statisticsBars.querySelector('[aria-pressed="true"]')?.dataset.month : undefined;
+  const openMonths = keepMonths
+    ? new Set([...statisticsMonths.querySelectorAll("details[open]")].map((group) => group.dataset.month))
+    : new Set();
+  statisticsCount.textContent = `${statisticsBookCount(booksForYear.length)} gelesen`;
+  statisticsEmpty.hidden = booksForYear.length > 0;
+  renderStatisticsChart(months, selectedMonth);
+  statisticsMonths.replaceChildren(...[...months.entries()].reverse()
+    .filter(([, books]) => books.length)
+    .map(([month, books]) => statisticsMonthGroup(month, books, openMonths.has(String(month)))));
+}
+
+function statisticsBookCount(count) {
+  return `${count} ${count === 1 ? "Buch" : "Bücher"}`;
+}
+
+function renderStatisticsChart(months, selectedMonth) {
+  const maxCount = Math.max(1, ...months.map((books) => books.length));
+  let activeBar;
+  statisticsMonthCount.textContent = "Monat auswählen";
+  const bars = months.map((books, month) => {
+    const count = books.length;
+    const name = monthNames[month];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "statistics-bar";
+    button.dataset.month = month;
+    button.setAttribute("aria-label", name);
+    button.setAttribute("aria-pressed", "false");
+
+    const track = document.createElement("span");
+    track.className = "statistics-bar-track";
+    const fill = document.createElement("span");
+    fill.className = "statistics-bar-fill";
+    fill.toggleAttribute("data-empty", count === 0);
+    fill.style.setProperty("--bar-height", `${count / maxCount * 100}%`);
+    track.append(fill);
+    button.append(track, name.slice(0, 3));
+
+    const select = () => {
+      activeBar?.setAttribute("aria-pressed", "false");
+      activeBar = button;
+      button.setAttribute("aria-pressed", "true");
+      statisticsMonthCount.textContent = `${name} · ${statisticsBookCount(count)} fertig gelesen`;
+    };
+    button.addEventListener("click", select);
+    if (button.dataset.month === selectedMonth) select();
+    return button;
+  });
+  statisticsBars.replaceChildren(...bars);
+}
+
+function statisticsMonthGroup(month, books, open) {
+  const group = document.createElement("details");
+  group.className = "statistics-month";
+  group.dataset.month = month;
+  group.open = open;
+  const summary = document.createElement("summary");
+  const count = document.createElement("span");
+  count.className = "view-count";
+  count.textContent = statisticsBookCount(books.length);
+  summary.append(monthNames[month], count);
+  const list = document.createElement("ul");
+  list.className = "statistics-book-list";
+  for (const { book, date } of books) list.append(statisticsBookRow(book, date));
+  group.append(summary, list);
+  return group;
 }
 
 function statisticsBookRow(book, date) {
@@ -2590,7 +2647,7 @@ document.querySelector(".clear-rating").addEventListener("click", () => {
   document.querySelectorAll('[name="rating"]').forEach((radio) => { radio.checked = false; });
 });
 window.addEventListener("hashchange", () => updateMainView(true));
-statisticsYear.addEventListener("change", renderStatistics);
+statisticsYear.addEventListener("change", () => renderStatistics(true));
 appearanceButton.addEventListener("click", () => setAppearanceMenu(appearanceMenu.hidden));
 themeOptions.forEach((option) => option.addEventListener("click", () => {
   applyTheme(option.dataset.themeOption);

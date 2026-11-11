@@ -44,8 +44,8 @@
       }
     } catch (_error) {}
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=53">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=61"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=54">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=62"></script>
 </head>
 <body>
   <header class="site-header">
@@ -192,8 +192,17 @@
         </label>
       </div>
       <div id="statistics-loading" class="loading-state" role="status">Deine Sammlung wird geladen …</div>
-      <div id="statistics-months" class="statistics-months"></div>
-      <p class="empty-state statistics-empty" id="statistics-empty" hidden>Für dieses Jahr sind keine Abschlussdaten erfasst.</p>
+      <div id="statistics-content" hidden>
+        <section class="statistics-chart" aria-label="Gelesene Bücher pro Monat">
+          <p class="statistics-chart-readout" id="statistics-month-count" role="status"></p>
+          <div class="statistics-bars" id="statistics-bars"></div>
+        </section>
+        <section class="statistics-history" aria-labelledby="statistics-history-heading">
+          <h2 id="statistics-history-heading">Leseverlauf</h2>
+          <div id="statistics-months" class="statistics-months"></div>
+          <p class="empty-state statistics-empty" id="statistics-empty" hidden>Für dieses Jahr sind keine Abschlussdaten erfasst.</p>
+        </section>
+      </div>
     </section>
   </main>
 
