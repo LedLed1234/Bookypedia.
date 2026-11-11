@@ -2357,7 +2357,7 @@ def test_frontend_exposes_all_appearance_palettes(client):
     assert "async function loadSeasonEpisodes(media, season)" in script
     assert 'const initialTab = requestedTab || seasonOneTab || tabs.querySelector(".media-season-tab")' in script
     assert "if (Number(season.season_number) === 1) seasonOneTab = tab" in script
-    assert "function usesMobileSeasonDialog()" in script
+    assert "function usesMobileMediaLayout()" in script
     assert "function openMobileSeasonDialog(media, season)" in script
     assert "if (mobileSeasonFlow) activateSeasonTab(tabs, initialTab)" in script
     assert "function episodeRatingControl(episode, media, seasonNumber)" in script

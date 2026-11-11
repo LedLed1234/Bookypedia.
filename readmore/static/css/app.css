@@ -254,6 +254,7 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .section-heading .text-button { flex: 0 0 auto; }
 .collection-heading { margin-bottom: 22px; }
 .collection-tools { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.collection-tools > button[hidden] { display: none; }
 .collection-action-buttons { display: flex; align-items: center; gap: 8px; }
 .season-visibility-button[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 .grouping-button, .sort-button { min-height: 36px; padding: 6px 10px; font-size: .76rem; }
@@ -344,6 +345,18 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .tmdb-attribution a { color: #01b4e4; font-weight: 900; letter-spacing: .06em; }
 .media-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
 .media-library-card { position: relative; }
+.compact-media-card { position: relative; grid-column: 1 / -1; display: grid; grid-template-columns: 62px minmax(0, 1fr); align-items: center; gap: 12px; padding: 8px; }
+.compact-media-card .media-poster-wrap { width: 62px; aspect-ratio: 2 / 3; border-radius: 6px; }
+.compact-media-card .media-poster { padding: 0; object-fit: cover; filter: none; }
+.compact-media-card .book-placeholder { width: 100%; }
+.compact-media-card .book-placeholder-label { display: none; }
+.compact-media-copy { min-width: 0; padding-right: 6px; }
+.compact-media-copy .media-type-badge { margin-bottom: 4px; }
+.compact-media-copy h3 { margin: 0; font-size: .89rem; line-height: 1.25; }
+.compact-media-trigger::after { content: ""; position: absolute; inset: 0; }
+.compact-media-trigger:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: inherit; }
+.compact-media-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 5px 0 0; color: var(--muted); font-size: .74rem; }
+.compact-media-score { color: var(--gold); font-weight: 800; }
 .movie-collection-card { border-color: color-mix(in srgb, var(--theme-border) 62%, var(--accent)); }
 .movie-collection-card .book-cover-wrap { position: relative; aspect-ratio: 4 / 3; }
 .movie-collection-card .series-stack-cover { width: min(30%, 88px); }
@@ -394,9 +407,12 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .media-preview-copy { position: relative; z-index: 1; align-self: end; min-width: 0; padding-top: 92px; }
 .media-preview-copy h2 { margin: 0 0 8px; font-size: clamp(1.5rem, 4vw, 2.2rem); }
 .media-preview-meta { margin: 0 0 7px; color: var(--muted); font-size: .8rem; }
-.media-preview-overview { margin: 18px 0 22px; color: var(--text); font-size: .9rem; line-height: 1.65; }
-.media-preview-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.media-preview-actions { grid-column: 1 / -1; display: flex; align-items: stretch; flex-wrap: wrap; gap: 8px; }
+.media-preview-actions .button, .media-preview-actions .status-select { min-height: 42px; }
 .media-preview-actions [hidden] { display: none; }
+.media-description { grid-column: 1 / -1; border: 1px solid var(--theme-border); border-radius: 10px; background: var(--soft-tint); }
+.media-description > summary { min-height: 44px; padding: 11px 13px; font-size: .82rem; font-weight: 800; cursor: pointer; }
+.media-description > p { margin: 0; padding: 0 13px 12px; font-size: .82rem; line-height: 1.6; }
 .media-collection-section { padding: 25px 30px 30px; border-top: 1px solid var(--theme-border); }
 .media-collection-section[hidden] { display: none; }
 .media-collection-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 8px; }
@@ -440,7 +456,6 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .media-season-dialog-copy { min-width: 0; align-self: center; padding-right: 40px; }
 .media-season-dialog-copy h2 { margin: 3px 0 7px; font-size: clamp(1.35rem, 4vw, 1.9rem); }
 .media-season-dialog-meta { margin: 0 0 12px; color: var(--muted); font-size: .76rem; font-weight: 750; }
-.media-season-dialog-overview { margin: 0; color: var(--text); font-size: .82rem; line-height: 1.55; }
 .media-season-dialog .media-episodes-panel { margin: 0; padding: 24px 30px 30px; border-top: 0; }
 .media-season-dialog .media-episodes-status { display: none; }
 .media-library-collection-dialog { width: min(760px, calc(100% - 28px)); overflow-y: auto; border: 1px solid var(--theme-border); }
@@ -724,20 +739,14 @@ html.dialog-scroll-locked { overflow: hidden; }
   .search-card .book-placeholder { width: 62px; }
   .media-grid:not(.search-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .media-grid:not(.search-grid) .movie-collection-card .book-cover-wrap { aspect-ratio: 4 / 3; }
-  .media-info-button { top: 6px; right: 6px; width: 30px; height: 30px; font-size: .8rem; }
-  .media-library-actions { grid-template-columns: 1fr 1fr; }
-  .media-library-actions .status-select { grid-column: 1 / -1; }
-  .media-library-actions .icon-button { width: 100%; height: 34px; }
-  .media-personal-rating { font-size: .65rem; }
-  .media-review-excerpt { display: none; }
   .media-preview-dialog { max-height: calc(100vh - 18px); overflow-y: auto; }
+  .media-preview-shell { min-height: 0; }
   .media-preview-backdrop { height: 150px; }
   .media-preview-content { grid-template-columns: 105px minmax(0, 1fr); gap: 15px; padding: 0 17px 22px; margin-top: -48px; }
   .media-preview-copy { padding-top: 56px; }
   .media-preview-copy h2 { font-size: 1.35rem; }
-  .media-preview-overview { grid-column: 1 / -1; margin-top: 12px; font-size: .82rem; }
-  .media-preview-actions { grid-column: 1 / -1; }
-  .media-preview-actions .button { flex: 1; }
+  .media-preview-actions .button { flex: 1 1 110px; }
+  #media-preview-status { flex: 1 0 100%; }
   .media-collection-section, .media-series-section { padding: 20px 17px 23px; }
   .media-collection-list { grid-auto-columns: minmax(220px, 78vw); }
   .media-collection-part { grid-template-columns: 68px minmax(0, 1fr); }
@@ -747,7 +756,6 @@ html.dialog-scroll-locked { overflow: hidden; }
   .media-season-dialog-header { grid-template-columns: 88px minmax(0, 1fr); gap: 14px; padding: 22px 17px; }
   .media-season-dialog-copy { padding-right: 35px; }
   .media-season-dialog-copy h2 { font-size: 1.22rem; }
-  .media-season-dialog-overview { display: -webkit-box; overflow: hidden; font-size: .76rem; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
   .media-season-dialog .media-episodes-panel { padding: 20px 17px 24px; }
   .media-season-dialog .media-episodes-heading { align-items: flex-start; }
   .media-season-dialog .media-episodes-tools { align-items: flex-end; flex-direction: column; gap: 6px; }
