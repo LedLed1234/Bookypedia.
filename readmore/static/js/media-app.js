@@ -395,6 +395,29 @@ function parentMediaForSeason(season) {
   };
 }
 
+function setMediaRemoveIcon(button) {
+  const namespace = "http://www.w3.org/2000/svg";
+  const icon = document.createElementNS(namespace, "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("focusable", "false");
+  const path = document.createElementNS(namespace, "path");
+  path.setAttribute("d", "M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6 M10 10v6 M14 10v6");
+  icon.append(path);
+  button.replaceChildren(icon);
+}
+
+function mediaRemoveButton(media, onRemove = () => openDeleteDialog(media)) {
+  const button = document.createElement("button");
+  button.className = "icon-button media-action-button media-remove-button";
+  button.type = "button";
+  button.setAttribute("aria-label", `${media.title} aus der Sammlung entfernen`);
+  button.title = "Aus Sammlung entfernen";
+  setMediaRemoveIcon(button);
+  button.addEventListener("click", onRemove);
+  return button;
+}
+
 function seasonLibraryCard(season) {
   if (usesMobileMediaLayout()) {
     return compactMediaCard(season, () => openMediaPreview(season, true, season.season_number));
@@ -426,14 +449,7 @@ function seasonLibraryCard(season) {
   body.append(mediaMeta(season), mediaOverview(season));
   const actions = document.createElement("div");
   actions.className = "media-library-actions";
-  actions.append(statusSelect(season));
-  const remove = document.createElement("button");
-  remove.className = "icon-button remove-book-button";
-  remove.type = "button";
-  remove.textContent = "×";
-  remove.setAttribute("aria-label", `${season.title} aus der Sammlung entfernen`);
-  remove.addEventListener("click", () => openDeleteDialog(season));
-  actions.append(remove);
+  actions.append(statusSelect(season), mediaRemoveButton(season));
   body.append(actions);
   article.append(body);
   return article;
@@ -520,21 +536,14 @@ function libraryCard(media) {
   actions.className = "media-library-actions";
   actions.append(statusSelect(media));
   const rate = document.createElement("button");
-  rate.className = "icon-button media-rate-button";
+  rate.className = "icon-button media-action-button media-rate-button";
   rate.type = "button";
   rate.textContent = media.rating ? "★" : "☆";
   rate.classList.toggle("rated", Boolean(media.rating));
   rate.setAttribute("aria-label", `${media.title} bewerten`);
   rate.title = media.rating || media.review ? "Bewertung bearbeiten" : "Titel bewerten";
   rate.addEventListener("click", () => openRatingDialog(media));
-  actions.append(rate);
-  const remove = document.createElement("button");
-  remove.className = "icon-button remove-book-button";
-  remove.type = "button";
-  remove.textContent = "×";
-  remove.setAttribute("aria-label", `${media.title} aus der Sammlung entfernen`);
-  remove.addEventListener("click", () => openDeleteDialog(media));
-  actions.append(remove);
+  actions.append(rate, mediaRemoveButton(media));
   body.append(actions);
   article.append(body);
   return article;
@@ -661,7 +670,7 @@ function collectionMovieRow(movie) {
   actions.className = "media-library-collection-actions";
   actions.append(statusSelect(movie));
   const rate = document.createElement("button");
-  rate.className = "icon-button media-rate-button";
+  rate.className = "icon-button media-action-button media-rate-button";
   rate.classList.toggle("rated", Boolean(movie.rating));
   rate.type = "button";
   rate.textContent = movie.rating ? "★" : "☆";
@@ -676,12 +685,7 @@ function collectionMovieRow(movie) {
   info.textContent = document.documentElement.dataset.bookInfoSymbol || "!";
   info.setAttribute("aria-label", `Informationen zu ${movie.title}`);
   info.addEventListener("click", openInfo);
-  const remove = document.createElement("button");
-  remove.className = "icon-button remove-book-button";
-  remove.type = "button";
-  remove.textContent = "×";
-  remove.setAttribute("aria-label", `${movie.title} aus der Sammlung entfernen`);
-  remove.addEventListener("click", () => {
+  const remove = mediaRemoveButton(movie, () => {
     libraryCollectionDialog.close();
     openDeleteDialog(movie);
   });
@@ -943,10 +947,15 @@ function renderPreviewActions() {
   previewAddButton.textContent = "＋ Watchlist";
   previewStatus.hidden = !saved;
   previewStatus.replaceChildren(...(saved ? [statusSelect(saved)] : []));
+  const personal = saved ? personalRating(saved) : null;
+  document.querySelector("#media-preview-personal-rating").replaceChildren(...(personal ? [personal] : []));
   previewRateButton.hidden = !saved || saved.item_type === "season";
-  previewRateButton.textContent = saved?.rating ? `★ ${saved.rating}/5` : "Bewerten";
+  previewRateButton.textContent = saved?.rating ? "★" : "☆";
   previewRateButton.classList.toggle("rated", Boolean(saved?.rating));
-  previewRateButton.setAttribute("aria-label", saved?.rating || saved?.review ? "Bewertung bearbeiten" : "Bewerten");
+  const rateLabel = saved?.rating || saved?.review ? "Bewertung bearbeiten" : "Bewerten";
+  const rating = saved?.rating ? ` (${saved.rating} von 5 Sternen)` : "";
+  previewRateButton.setAttribute("aria-label", rateLabel + rating);
+  previewRateButton.title = rateLabel + rating;
   previewRemoveButton.hidden = !saved;
 }
 
@@ -1777,6 +1786,7 @@ previewRateButton.addEventListener("click", () => {
   const saved = savedPreviewItem();
   if (saved) openRatingDialog(saved);
 });
+setMediaRemoveIcon(previewRemoveButton);
 previewRemoveButton.addEventListener("click", () => {
   const saved = savedPreviewItem();
   if (saved) openDeleteDialog(saved);
