@@ -429,6 +429,22 @@ h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); line-height: 1.2; lette
 .media-preview-actions { grid-column: 1 / -1; display: flex; align-items: stretch; flex-wrap: wrap; gap: 8px; }
 .media-preview-actions .button, .media-preview-actions .status-select { min-height: 42px; }
 .media-preview-actions [hidden] { display: none; }
+.media-watch-history {
+  grid-column: 1 / -1;
+  padding: 12px 14px;
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  background: var(--soft-tint);
+}
+.media-watch-summary { margin: 0 0 8px; font-size: .82rem; font-weight: 750; }
+.media-rewatch-button { min-height: 36px; }
+.media-rewatch-button[hidden] { display: none; }
+.media-watch-history details { margin-top: 9px; font-size: .79rem; }
+.media-watch-history summary { width: fit-content; min-height: 32px; padding: 6px 0; cursor: pointer; font-weight: 750; }
+.media-watch-history ul { margin: 3px 0 0; padding-left: 22px; color: var(--muted); }
+.media-watch-history li + li { margin-top: 4px; }
+.media-episodes-panel .media-watch-history { margin: 0 0 12px; }
+.media-watch-error { margin: 6px 0 0; color: var(--danger); font-size: .79rem; }
 .media-description { grid-column: 1 / -1; border: 1px solid var(--theme-border); border-radius: 10px; background: var(--soft-tint); }
 .media-description > summary { min-height: 44px; padding: 11px 13px; font-size: .82rem; font-weight: 800; cursor: pointer; }
 .media-description > p { margin: 0; padding: 0 13px 12px; font-size: .82rem; line-height: 1.6; }

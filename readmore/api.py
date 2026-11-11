@@ -4,6 +4,7 @@ import sqlite3
 import unicodedata
 from urllib.parse import urlparse
 from collections import OrderedDict
+from datetime import date
 from difflib import SequenceMatcher
 from threading import Lock
 from time import monotonic
@@ -952,6 +953,52 @@ def delete_media(media_id):
     if cursor.rowcount == 0:
         return validation_error("Titel nicht gefunden.", 404)
     return "", 204
+
+
+@api.route("/media/<int:item_id>/rewatches", methods=["GET", "POST"])
+@api.route("/media/seasons/<int:item_id>/rewatches", defaults={"season": True}, methods=["GET", "POST"])
+def media_rewatches(item_id, season=False):
+    table, foreign_key = ("saved_seasons", "season_id") if season else ("media_items", "media_id")
+    db = get_db()
+    user_id = g.user["id"]
+    item = db.execute(
+        f"SELECT status FROM {table} WHERE id = ? AND user_id = ?", (item_id, user_id)
+    ).fetchone()
+    if item is None:
+        return validation_error("Eintrag nicht gefunden.", 404)
+
+    if request.method == "POST":
+        payload = request.get_json(silent=True)
+        watched_on = payload.get("watched_on") if isinstance(payload, dict) else None
+        try:
+            if date.fromisoformat(watched_on).isoformat() != watched_on:
+                raise ValueError
+        except (TypeError, ValueError):
+            return validation_error("Bitte gib ein gültiges Datum an.")
+
+        saved = db.execute(
+            f"""
+            INSERT INTO media_rewatches ({foreign_key}, watched_on)
+            SELECT id, ? FROM {table}
+            WHERE id = ? AND user_id = ? AND status = 'completed'
+            """,
+            (watched_on, item_id, user_id),
+        )
+        db.commit()
+        if not saved.rowcount:
+            return validation_error("Setze den Eintrag zuerst auf Completed.", 409)
+
+    rows = db.execute(
+        f"""
+        SELECT rewatches.watched_on
+        FROM media_rewatches AS rewatches
+        JOIN {table} AS item ON item.id = rewatches.{foreign_key}
+        WHERE item.id = ? AND item.user_id = ?
+        ORDER BY rewatches.watched_on DESC, rewatches.id DESC
+        """,
+        (item_id, user_id),
+    ).fetchall()
+    return jsonify(rewatches=[row["watched_on"] for row in rows]), 201 if request.method == "POST" else 200
 
 
 @api.get("/books")

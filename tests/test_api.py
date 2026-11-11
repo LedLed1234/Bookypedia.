@@ -3,6 +3,7 @@ import sqlite3
 from pathlib import Path
 
 from readmore import create_app
+from readmore.auth import create_user
 
 
 BOOK = {
@@ -185,6 +186,59 @@ def test_completion_date_backfill_preserves_known_dates_and_skips_watchlist(clie
             2: known_date,
             3: None,
         }
+
+
+def test_rewatches_persist_separately_for_movies_series_and_seasons(client):
+    series = client.post("/api/media", json=MEDIA).get_json()["media"]
+    movie = client.post(
+        "/api/media", json={**MEDIA, "media_type": "movie", "tmdb_id": 11, "status": "completed"}
+    ).get_json()["media"]
+    season = client.post("/api/media/seasons", json={
+        "tv_tmdb_id": MEDIA["tmdb_id"], "season_number": 1, "series_title": MEDIA["title"],
+        "season_title": "Staffel 1", "status": "completed",
+    }).get_json()["season"]
+    series_url = f"/api/media/{series['id']}"
+    movie_url = f"/api/media/{movie['id']}/rewatches"
+    season_url = f"/api/media/seasons/{season['id']}/rewatches"
+    assert client.post(f"{series_url}/rewatches", json={"watched_on": "2026-02-10"}).status_code == 409
+    completed = client.patch(series_url, json={"status": "completed"}).get_json()["media"]
+    assert client.post(f"{series_url}/rewatches", json={"watched_on": "2026-02-30"}).status_code == 400
+
+    for endpoint, day in [
+        (f"{series_url}/rewatches", "2026-06-10"),
+        (f"{series_url}/rewatches", "2026-04-12"),
+        (season_url, "2026-05-11"),
+        (movie_url, "2026-05-12"),
+    ]:
+        assert client.post(endpoint, json={"watched_on": day}).status_code == 201
+
+    restarted = create_app({"TESTING": True, "DATABASE": client.application.config["DATABASE"]})
+    reader = restarted.test_client()
+    assert reader.get(f"{series_url}/rewatches").get_json()["rewatches"] == ["2026-06-10", "2026-04-12"]
+    assert reader.get(season_url).get_json()["rewatches"] == ["2026-05-11"]
+    assert reader.get(movie_url).get_json()["rewatches"] == ["2026-05-12"]
+    stored = next(item for item in reader.get("/api/media").get_json()["media"] if item["id"] == series["id"])
+    assert stored["status"] == "completed"
+    assert stored["completed_at"] == completed["completed_at"]
+
+
+def test_rewatches_are_scoped_to_the_owner(client):
+    movie = client.post("/api/media", json={**MEDIA, "status": "completed"}).get_json()["media"]
+    endpoint = f"/api/media/{movie['id']}/rewatches"
+    assert client.post(endpoint, json={"watched_on": "2026-07-03"}).status_code == 201
+    with client.application.app_context():
+        create_user("other-viewer", "another-test-password", require_password_change=False)
+    other = create_app({
+        "TESTING": True,
+        "TEST_AUTO_LOGIN": False,
+        "DATABASE": client.application.config["DATABASE"],
+    }).test_client()
+    assert other.post("/login", data={
+        "username": "other-viewer", "password": "another-test-password",
+    }).status_code == 302
+    assert other.get(endpoint).status_code == 404
+    assert other.post(endpoint, json={"watched_on": "2026-07-04"}).status_code == 404
+    assert client.get(endpoint).get_json()["rewatches"] == ["2026-07-03"]
 
 
 def test_media_rejects_invalid_identity_and_external_images(client):

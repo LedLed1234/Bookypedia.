@@ -131,6 +131,19 @@ CREATE TABLE IF NOT EXISTS saved_seasons (
 CREATE INDEX IF NOT EXISTS idx_saved_seasons_user_status_updated
     ON saved_seasons(user_id, status, updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS media_rewatches (
+    id INTEGER PRIMARY KEY,
+    media_id INTEGER REFERENCES media_items(id) ON DELETE CASCADE,
+    season_id INTEGER REFERENCES saved_seasons(id) ON DELETE CASCADE,
+    watched_on TEXT NOT NULL,
+    CHECK ((media_id IS NULL) != (season_id IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_rewatches_media
+    ON media_rewatches(media_id, watched_on DESC) WHERE media_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_media_rewatches_season
+    ON media_rewatches(season_id, watched_on DESC) WHERE season_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS series (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider TEXT NOT NULL,

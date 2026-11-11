@@ -113,6 +113,17 @@ const previewRemoveButton = document.querySelector("#media-preview-remove");
 const mobileMediaLayout = window.matchMedia("(max-width: 680px)");
 const seasonDialog = document.querySelector("#media-season-dialog");
 const seasonDialogContent = document.querySelector("#media-season-dialog-content");
+const previewWatchHistory = document.querySelector("#media-preview-history");
+const seasonWatchHistory = document.querySelector("#media-season-history");
+const rewatchDialog = document.querySelector("#media-rewatch-dialog");
+const rewatchForm = document.querySelector("#media-rewatch-form");
+const rewatchDateInput = document.querySelector("#media-rewatch-date");
+const rewatchError = document.querySelector("#media-rewatch-error");
+const rewatchSave = document.querySelector("#media-rewatch-save");
+const watchHistoryViews = new Map();
+const watchHistoryCache = new Map();
+const watchHistoryRequests = new Set();
+let rewatchTarget = null;
 const libraryCollectionDialog = document.querySelector("#media-library-collection-dialog");
 const libraryCollectionSavedList = document.querySelector("#media-library-collection-saved");
 const libraryCollectionMissing = document.querySelector("#media-library-collection-missing");
@@ -368,9 +379,7 @@ function statusSelect(media) {
         body: JSON.stringify({ status: select.value }),
       });
       Object.assign(media, media.item_type === "season" ? payload.season : payload.media);
-      if (previewDialog.open && savedPreviewItem() === media) {
-        renderCompletionDate("media-preview-completed", media.completed_at);
-      }
+      refreshWatchHistoryViews(rewatchEndpoint(media));
       renderLibrary();
       if (libraryCollectionDialog.open && state.activeCollectionKey) {
         renderLibraryCollectionDialog(state.activeCollectionKey);
@@ -948,20 +957,132 @@ function savedPreviewItem() {
     : savedMedia(item);
 }
 
-function renderCompletionDate(id, completedAt) {
-  const label = document.getElementById(id);
-  const iso = completedAt?.includes(" ") ? completedAt.replace(" ", "T") + "Z" : completedAt ?? "";
+function watchDate(value) {
+  const iso = value?.includes(" ") ? value.replace(" ", "T") + "Z" : value ?? "";
   const date = new Date(iso.length === 10 ? iso + "T00:00:00" : iso);
-  label.hidden = !iso || Number.isNaN(date.getTime());
-  if (label.hidden) return;
-  const time = label.querySelector("time");
+  return Number.isNaN(date.getTime()) ? null : { iso, date };
+}
+
+function localDateKey(date) {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${String(date.getFullYear()).padStart(4, "0")}-${month}-${day}`;
+}
+
+function watchTime({ iso, date }) {
+  const time = document.createElement("time");
   time.dateTime = iso;
   time.textContent = completionDateFormatter.format(date);
+  return time;
+}
+
+function rewatchEndpoint(item) {
+  const prefix = item.item_type === "season" ? "/api/media/seasons" : "/api/media";
+  return `${prefix}/${item.id}/rewatches`;
+}
+
+function refreshWatchHistoryViews(endpoint) {
+  for (const [container, item] of watchHistoryViews) {
+    if (item && rewatchEndpoint(item) === endpoint) renderWatchHistory(container, item);
+  }
+}
+
+async function loadWatchHistory(endpoint) {
+  watchHistoryRequests.add(endpoint);
+  try {
+    const { rewatches } = await api(endpoint);
+    if (!watchHistoryCache.has(endpoint)) watchHistoryCache.set(endpoint, rewatches);
+    refreshWatchHistoryViews(endpoint);
+  } catch {
+    for (const [container, item] of watchHistoryViews) {
+      if (!item || rewatchEndpoint(item) !== endpoint || watchHistoryCache.has(endpoint)) continue;
+      const error = container.querySelector(".media-watch-error");
+      error.textContent = "Der Verlauf konnte gerade nicht geladen werden.";
+      error.hidden = false;
+    }
+  } finally {
+    watchHistoryRequests.delete(endpoint);
+  }
+}
+
+function renderWatchHistory(container, item) {
+  const details = container.querySelector("details");
+  if (watchHistoryViews.get(container) !== item) details.open = false;
+  watchHistoryViews.set(container, item);
+  const endpoint = item ? rewatchEndpoint(item) : null;
+  const savedRewatches = watchHistoryCache.get(endpoint);
+  const entries = (savedRewatches ?? []).map(watchDate).filter(Boolean)
+    .map((entry) => ({ ...entry, label: "Erneut angesehen" }));
+  const first = watchDate(item?.completed_at);
+  if (first) entries.push({ ...first, label: "Erstmals angesehen" });
+  entries.sort((left, right) => localDateKey(right.date).localeCompare(localDateKey(left.date)));
+
+  const canRewatch = item?.status === "completed";
+  container.hidden = !canRewatch && entries.length === 0;
+  container.querySelector(".media-watch-error").hidden = true;
+  const button = container.querySelector(".media-rewatch-button");
+  button.hidden = !canRewatch;
+  const summary = container.querySelector(".media-watch-summary");
+  summary.hidden = entries.length === 0;
+  details.hidden = entries.length < 2;
+  if (entries.length) {
+    const latest = watchTime(entries[0]);
+    summary.replaceChildren(
+      entries.length > 1 ? "Zuletzt angesehen am " : "Angesehen am ",
+      latest,
+      entries.length > 1 ? ` · ${entries.length}× angesehen` : "",
+    );
+  } else {
+    summary.replaceChildren();
+  }
+  details.querySelector("ul").replaceChildren(...entries.map((entry) => {
+    const li = document.createElement("li");
+    li.append(watchTime(entry), ` · ${entry.label}`);
+    return li;
+  }));
+
+  if (first && !savedRewatches && !watchHistoryRequests.has(endpoint)) {
+    loadWatchHistory(endpoint);
+  }
+}
+
+function openRewatchDialog(item) {
+  if (item?.status !== "completed" || rewatchSave.disabled) return;
+  rewatchTarget = item;
+  const today = localDateKey(new Date());
+  rewatchDateInput.max = today;
+  rewatchDateInput.value = today;
+  rewatchError.hidden = true;
+  document.querySelector("#media-rewatch-target").textContent = item.title;
+  rewatchDialog.showModal();
+}
+
+async function saveRewatch(event) {
+  event.preventDefault();
+  const item = rewatchTarget;
+  if (!item || rewatchSave.disabled) return;
+  const endpoint = rewatchEndpoint(item);
+  rewatchSave.disabled = true;
+  rewatchError.hidden = true;
+  try {
+    const { rewatches } = await api(endpoint, {
+      method: "POST",
+      body: JSON.stringify({ watched_on: rewatchDateInput.value }),
+    });
+    watchHistoryCache.set(endpoint, rewatches);
+    refreshWatchHistoryViews(endpoint);
+    if (rewatchDialog.open) rewatchDialog.close();
+  } catch (error) {
+    rewatchError.textContent = error.message;
+    rewatchError.hidden = false;
+  } finally {
+    rewatchSave.disabled = false;
+  }
 }
 
 function renderPreviewActions() {
   const saved = savedPreviewItem();
-  renderCompletionDate("media-preview-completed", saved?.completed_at);
+  renderWatchHistory(previewWatchHistory, saved);
   previewAddButton.hidden = Boolean(saved);
   previewAddButton.disabled = false;
   previewAddButton.textContent = "＋ Watchlist";
@@ -1011,6 +1132,7 @@ function openMediaPreview(media, infoOnly = false, seasonNumber = null) {
   document.querySelector("#media-preview-overview").textContent = media.overview
     || "Für diesen Titel ist noch keine deutsche Beschreibung verfügbar.";
   document.querySelector("#media-preview-description").open = false;
+  previewWatchHistory.querySelector("details").open = false;
   renderPreviewActions();
   const collectionSection = document.querySelector("#media-collection-section");
   collectionSection.hidden = true;
@@ -1233,6 +1355,7 @@ function restoreEpisodesPanel() {
   const panel = document.querySelector("#media-episodes-panel");
   const section = document.querySelector("#media-series-section");
   panel.hidden = true;
+  renderWatchHistory(seasonWatchHistory, null);
   panel.removeAttribute("data-request-key");
   if (panel.parentElement !== section) section.append(panel);
 }
@@ -1253,10 +1376,6 @@ function renderMobileSeasonHeader(media, season) {
     year || null,
     episodeCount ? `${episodeCount} ${episodeCount === 1 ? "Episode" : "Episoden"}` : null,
   ].filter(Boolean).join(" · ");
-  renderCompletionDate(
-    "media-season-dialog-completed",
-    savedSeason(media.tmdb_id, season.season_number)?.completed_at,
-  );
   document.querySelector("#media-season-dialog-overview").textContent = season.overview
     || "Für diese Staffel ist noch keine Beschreibung verfügbar.";
 }
@@ -1319,6 +1438,8 @@ async function loadSeasonEpisodes(media, season) {
 function configureSeasonAddButton(media, season) {
   const button = document.querySelector("#media-season-add");
   const stored = savedSeason(media.tmdb_id, season.season_number);
+  const shownInPreview = !seasonDialog.open && stored === savedPreviewItem();
+  renderWatchHistory(seasonWatchHistory, shownInPreview ? null : stored);
   button.onclick = null;
   button.disabled = Boolean(stored);
   button.classList.toggle("saved", Boolean(stored));
@@ -1797,6 +1918,13 @@ settingsSearchLimit.addEventListener("change", () => {
 });
 settingsStartView.addEventListener("change", () => setFilter(settingsStartView.value));
 confirmDeleteButton.addEventListener("click", confirmDelete);
+for (const container of [previewWatchHistory, seasonWatchHistory]) {
+  container.querySelector(".media-rewatch-button").addEventListener("click", () => {
+    openRewatchDialog(watchHistoryViews.get(container));
+  });
+}
+rewatchForm.addEventListener("submit", saveRewatch);
+rewatchDialog.addEventListener("close", () => { rewatchTarget = null; });
 previewAddButton.addEventListener("click", async () => {
   const item = state.previewItem;
   if (!item) return;
@@ -1827,6 +1955,8 @@ previewDialog.addEventListener("close", () => {
   state.previewItem = null;
   state.previewSeason = null;
   state.previewSeasonNumber = null;
+  renderWatchHistory(previewWatchHistory, null);
+  renderWatchHistory(seasonWatchHistory, null);
 });
 seasonDialog.addEventListener("close", () => {
   state.previewSeason = null;
