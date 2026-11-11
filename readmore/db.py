@@ -324,6 +324,16 @@ def init_db():
     for column, definition in media_migrations.items():
         if column not in media_columns:
             db.execute(f"ALTER TABLE media_items ADD COLUMN {column} {definition}")
+
+    for table in ("media_items", "saved_seasons"):
+        db.execute(
+            f"""
+            UPDATE {table}
+            SET completed_at = '2026-01-01'
+            WHERE status = 'completed' AND (completed_at IS NULL OR completed_at = '')
+            """
+        )
+
     db.execute(
         """
         UPDATE books

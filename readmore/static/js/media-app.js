@@ -128,6 +128,11 @@ const SEARCH_CACHE_TTL = 10 * 60 * 1000;
 const COLLECTION_CACHE_TTL = 30 * 60 * 1000;
 const SERIES_CACHE_TTL = 30 * 60 * 1000;
 const titleCollator = new Intl.Collator("de", { sensitivity: "base", numeric: true });
+const completionDateFormatter = new Intl.DateTimeFormat("de-DE", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
 let toastTimer;
 
 async function api(url, options = {}) {
@@ -363,6 +368,9 @@ function statusSelect(media) {
         body: JSON.stringify({ status: select.value }),
       });
       Object.assign(media, media.item_type === "season" ? payload.season : payload.media);
+      if (previewDialog.open && savedPreviewItem() === media) {
+        renderCompletionDate("media-preview-completed", media.completed_at);
+      }
       renderLibrary();
       if (libraryCollectionDialog.open && state.activeCollectionKey) {
         renderLibraryCollectionDialog(state.activeCollectionKey);
@@ -419,8 +427,9 @@ function mediaRemoveButton(media, onRemove = () => openDeleteDialog(media)) {
 }
 
 function seasonLibraryCard(season) {
+  const open = () => openMediaPreview(season, true, season.season_number);
   if (usesMobileMediaLayout()) {
-    return compactMediaCard(season, () => openMediaPreview(season, true, season.season_number));
+    return compactMediaCard(season, open);
   }
   const article = document.createElement("article");
   article.className = "book-card media-library-card season-library-card";
@@ -429,7 +438,6 @@ function seasonLibraryCard(season) {
   poster.tabIndex = 0;
   poster.setAttribute("role", "button");
   poster.setAttribute("aria-label", `${season.title} öffnen`);
-  const open = () => openMediaPreview(parentMediaForSeason(season), true, season.season_number);
   poster.addEventListener("click", open);
   poster.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
@@ -940,8 +948,20 @@ function savedPreviewItem() {
     : savedMedia(item);
 }
 
+function renderCompletionDate(id, completedAt) {
+  const label = document.getElementById(id);
+  const iso = completedAt?.includes(" ") ? completedAt.replace(" ", "T") + "Z" : completedAt ?? "";
+  const date = new Date(iso.length === 10 ? iso + "T00:00:00" : iso);
+  label.hidden = !iso || Number.isNaN(date.getTime());
+  if (label.hidden) return;
+  const time = label.querySelector("time");
+  time.dateTime = iso;
+  time.textContent = completionDateFormatter.format(date);
+}
+
 function renderPreviewActions() {
   const saved = savedPreviewItem();
+  renderCompletionDate("media-preview-completed", saved?.completed_at);
   previewAddButton.hidden = Boolean(saved);
   previewAddButton.disabled = false;
   previewAddButton.textContent = "＋ Watchlist";
@@ -1233,6 +1253,10 @@ function renderMobileSeasonHeader(media, season) {
     year || null,
     episodeCount ? `${episodeCount} ${episodeCount === 1 ? "Episode" : "Episoden"}` : null,
   ].filter(Boolean).join(" · ");
+  renderCompletionDate(
+    "media-season-dialog-completed",
+    savedSeason(media.tmdb_id, season.season_number)?.completed_at,
+  );
   document.querySelector("#media-season-dialog-overview").textContent = season.overview
     || "Für diese Staffel ist noch keine Beschreibung verfügbar.";
 }

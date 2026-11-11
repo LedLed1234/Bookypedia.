@@ -64,6 +64,7 @@ def test_complete_media_lifecycle(client):
     assert created["status"] == "watchlist"
     assert created["cover_url"] == MEDIA["cover_url"]
     assert created["watchlist_at"] is not None
+    assert created["completed_at"] is None
 
     listed = client.get("/api/media").get_json()["media"]
     assert [item["tmdb_id"] for item in listed] == [70523]
@@ -90,6 +91,10 @@ def test_complete_media_lifecycle(client):
     filtered = client.get("/api/media?status=watching").get_json()["media"]
     assert [item["id"] for item in filtered] == [created["id"]]
     assert client.get("/api/media?status=read").status_code == 400
+
+    completed = client.patch(f"/api/media/{created['id']}", json={"status": "completed"})
+    assert completed.status_code == 200
+    assert completed.get_json()["media"]["completed_at"] is not None
 
     duplicate = client.post("/api/media", json=MEDIA)
     assert duplicate.status_code == 409
@@ -122,6 +127,7 @@ def test_saved_season_lifecycle_is_independent_from_series_collection(client):
     assert season["title"] == "Game of Thrones – Staffel 1"
     assert season["release_year"] == 2011
     assert season["status"] == "watchlist"
+    assert season["completed_at"] is None
     assert client.get("/api/media").get_json()["media"] == []
 
     listed = client.get("/api/media/seasons").get_json()["seasons"]
@@ -135,12 +141,50 @@ def test_saved_season_lifecycle_is_independent_from_series_collection(client):
     assert changed.get_json()["season"]["status"] == "watching"
     assert changed.get_json()["season"]["watching_at"] is not None
 
+    completed = client.patch(f"/api/media/seasons/{season['id']}", json={"status": "completed"})
+    assert completed.status_code == 200
+    assert completed.get_json()["season"]["completed_at"] is not None
+
     duplicate = client.post("/api/media/seasons", json=payload)
     assert duplicate.status_code == 409
     assert duplicate.get_json()["season"]["id"] == season["id"]
 
     assert client.delete(f"/api/media/seasons/{season['id']}").status_code == 204
     assert client.get("/api/media/seasons").get_json()["seasons"] == []
+
+
+def test_completion_date_backfill_preserves_known_dates_and_skips_watchlist(client):
+    database = client.application.config["DATABASE"]
+    known_date = "2025-10-23 17:10:00"
+    cases = (
+        ("/api/media", "media", "media_items", "tmdb_id", MEDIA),
+        (
+            "/api/media/seasons", "season", "saved_seasons", "season_number",
+            {"tv_tmdb_id": 1399, "series_title": "Game of Thrones", "season_title": "Staffel"},
+        ),
+    )
+    for endpoint, key, table, identity, payload in cases:
+        for number, status, date in (
+            (1, "completed", None),
+            (2, "completed", known_date),
+            (3, "watchlist", None),
+        ):
+            response = client.post(endpoint, json={**payload, identity: number, "status": status})
+            assert response.status_code == 201
+            with sqlite3.connect(database) as db:
+                db.execute(
+                    f"UPDATE {table} SET completed_at = ? WHERE id = ?",
+                    (date, response.get_json()[key]["id"]),
+                )
+
+    restarted = create_app({"TESTING": True, "DATABASE": database}).test_client()
+    for endpoint, key, _, identity, _ in cases:
+        items = restarted.get(endpoint).get_json()[key + "s" if key == "season" else "media"]
+        assert {item[identity]: item["completed_at"] for item in items} == {
+            1: "2026-01-01",
+            2: known_date,
+            3: None,
+        }
 
 
 def test_media_rejects_invalid_identity_and_external_images(client):
