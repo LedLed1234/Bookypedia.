@@ -187,23 +187,39 @@ function savedSeason(tvTmdbId, seasonNumber) {
   )) || null;
 }
 
-function posterElement(media) {
+function posterElement(media, { thumbnail = false, fallbackCover = null } = {}) {
   const wrap = document.createElement("div");
   wrap.className = "book-cover-wrap media-poster-wrap";
-  if (media.cover_url) {
-    const image = document.createElement("img");
-    image.className = "book-cover media-poster";
-    image.src = media.cover_url;
-    image.alt = `Poster von ${media.title}`;
-    image.loading = "lazy";
-    image.addEventListener("error", () => {
+  const sources = [];
+  for (const poster of [media.cover_url, fallbackCover, media.series_cover_url]) {
+    if (!poster) continue;
+    if (thumbnail) {
+      sources.push(poster.replace(/^https:\/\/image\.tmdb\.org\/t\/p\/(?:w500|w780|original)\//, "https://image.tmdb.org/t/p/w342/"));
+    }
+    sources.push(poster);
+  }
+  if (media.backdrop_url) sources.push(media.backdrop_url);
+  const [source, ...fallbacks] = new Set(sources);
+  if (!source) {
+    wrap.append(posterPlaceholder(media.title));
+    return wrap;
+  }
+
+  const image = document.createElement("img");
+  image.className = "book-cover media-poster";
+  image.alt = `Poster von ${media.title}`;
+  image.loading = "lazy";
+  image.addEventListener("error", () => {
+    const next = fallbacks.shift();
+    if (next) {
+      image.src = next;
+    } else {
       image.remove();
       wrap.append(posterPlaceholder(media.title));
-    }, { once: true });
-    wrap.append(image);
-  } else {
-    wrap.append(posterPlaceholder(media.title));
-  }
+    }
+  });
+  image.src = source;
+  wrap.append(image);
   return wrap;
 }
 
@@ -272,10 +288,10 @@ function mediaOverview(media) {
   return overview;
 }
 
-function compactMediaCard(media, open, { type, title = media.title, detail = media.release_year } = {}) {
+function compactMediaCard(media, open, { type, detail = media.release_year, fallbackCover } = {}) {
   const article = document.createElement("article");
   article.className = "book-card compact-media-card";
-  const poster = posterElement(media);
+  const poster = posterElement(media, { thumbnail: true, fallbackCover });
   poster.setAttribute("aria-hidden", "true");
 
   const copy = document.createElement("div");
@@ -287,7 +303,9 @@ function compactMediaCard(media, open, { type, title = media.title, detail = med
   trigger.className = "book-title-link compact-media-trigger";
   trigger.type = "button";
   trigger.setAttribute("aria-haspopup", "dialog");
-  trigger.textContent = title;
+  const title = document.createElement("span");
+  title.textContent = media.title;
+  trigger.append(title);
   trigger.addEventListener("click", open);
   heading.append(trigger);
   copy.append(badge, heading);
@@ -539,9 +557,13 @@ function movieCollectionCard(collection, movies) {
   const countLabel = `${savedCount} von ${collection.parts.length} gespeichert`;
   if (usesMobileMediaLayout()) {
     return compactMediaCard({
+      ...collection,
       title: collection.name,
-      cover_url: collection.cover_url || movies.find((movie) => movie.cover_url)?.cover_url,
-    }, open, { type: "Filmreihe", detail: countLabel });
+    }, open, {
+      type: "Filmreihe",
+      detail: countLabel,
+      fallbackCover: movies.find((movie) => movie.cover_url)?.cover_url,
+    });
   }
   const article = document.createElement("article");
   article.className = "book-card media-library-card movie-collection-card series-collection-card";
