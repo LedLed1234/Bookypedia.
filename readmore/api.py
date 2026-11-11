@@ -967,10 +967,10 @@ def media_watch_history():
             SELECT id, 'season', series_title || ' – ' || season_title, completed_at
             FROM saved_seasons WHERE user_id = ?
         )
-        SELECT kind, title, completed_at AS watched_at, 0 AS rewatch
+        SELECT id, kind, title, completed_at AS watched_at, 0 AS rewatch
         FROM titles WHERE completed_at IS NOT NULL AND completed_at != ''
         UNION ALL
-        SELECT kind, title, rewatches.watched_on, 1
+        SELECT titles.id, kind, title, rewatches.watched_on, 1
         FROM titles
         JOIN media_rewatches AS rewatches
           ON (titles.kind = 'season' AND rewatches.season_id = titles.id)

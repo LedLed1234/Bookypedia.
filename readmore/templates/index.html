@@ -32,8 +32,8 @@
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=2">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=2">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=76">
-  <script defer src="{{ url_for('static', filename='js/media-app.js') }}?v=25"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=77">
+  <script defer src="{{ url_for('static', filename='js/media-app.js') }}?v=26"></script>
 </head>
 <body>
   <header class="site-header">
@@ -135,6 +135,18 @@
         </label>
       </div>
       <a class="text-button media-statistics-back" href="#top">Zur Sammlung</a>
+      <div class="media-statistics-filters" id="media-statistics-filters" role="group" aria-label="Nach Medientyp filtern" hidden>
+        <button type="button" data-statistics-kind="all" aria-pressed="true">Alle</button>
+        <button type="button" data-statistics-kind="movie" aria-pressed="false">Filme</button>
+        <button type="button" data-statistics-kind="tv" aria-pressed="false">Serien</button>
+      </div>
+      <section class="media-statistics-chart" id="media-statistics-chart" aria-labelledby="media-statistics-chart-title" hidden>
+        <div class="media-statistics-chart-heading">
+          <h2 id="media-statistics-chart-title">Gesehene Titel pro Monat</h2>
+          <p id="media-statistics-month-count" aria-live="polite"></p>
+        </div>
+        <div class="media-statistics-bars" id="media-statistics-bars" role="group" aria-label="Monat auswählen"></div>
+      </section>
       <p class="media-statistics-summary" id="media-statistics-summary" aria-live="polite"></p>
       <div class="loading-state" id="media-statistics-message" role="status" hidden></div>
       <button class="button button-secondary" type="button" id="media-statistics-retry" hidden>Erneut laden</button>

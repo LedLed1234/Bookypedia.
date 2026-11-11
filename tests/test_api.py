@@ -261,9 +261,9 @@ def test_watch_history_includes_completions_and_separate_rewatches(client):
     history = client.get("/api/media/watch-history")
     assert history.status_code == 200
     assert history.get_json()["events"] == [
-        {"kind": "tv", "title": series["title"], "watched_at": "2026-03-14", "rewatch": True},
-        {"kind": "season", "title": season["title"], "watched_at": "2026-01-01", "rewatch": False},
-        {"kind": "tv", "title": series["title"], "watched_at": "2025-12-20 14:00:00", "rewatch": False},
+        {"id": series["id"], "kind": "tv", "title": series["title"], "watched_at": "2026-03-14", "rewatch": True},
+        {"id": season["id"], "kind": "season", "title": season["title"], "watched_at": "2026-01-01", "rewatch": False},
+        {"id": series["id"], "kind": "tv", "title": series["title"], "watched_at": "2025-12-20 14:00:00", "rewatch": False},
     ]
     assert movie["completed_at"] is None
 

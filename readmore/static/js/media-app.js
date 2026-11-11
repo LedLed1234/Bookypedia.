@@ -88,15 +88,22 @@ const collectionView = document.querySelector("#media-collection-view");
 const statisticsView = document.querySelector("#statistik");
 const statisticsLink = document.querySelector("#media-statistics-link");
 const statisticsYear = document.querySelector("#media-statistics-year");
+const statisticsFilters = document.querySelector("#media-statistics-filters");
+const statisticsChart = document.querySelector("#media-statistics-chart");
+const statisticsBars = document.querySelector("#media-statistics-bars");
+const statisticsMonthCount = document.querySelector("#media-statistics-month-count");
 const statisticsSummary = document.querySelector("#media-statistics-summary");
 const statisticsMessage = document.querySelector("#media-statistics-message");
 const statisticsRetry = document.querySelector("#media-statistics-retry");
 const statisticsMonths = document.querySelector("#media-statistics-months");
 const bottomNavLinks = document.querySelectorAll(".media-bottom-nav a");
 const monthFormatter = new Intl.DateTimeFormat("de-DE", { month: "long" });
+const monthAbbreviations = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 const watchKinds = { movie: "Film", tv: "Serie", season: "Staffel" };
 let statisticsEvents = [];
 let statisticsLoading = false;
+let statisticsKind = "all";
+let statisticsSelectedMonth = "";
 const mediaGrid = document.querySelector("#media-grid");
 const loadingState = document.querySelector("#library-loading");
 const emptyState = document.querySelector("#empty-state");
@@ -1008,6 +1015,69 @@ function statisticsEvent(event) {
   return row;
 }
 
+function statisticsTitleCount(events) {
+  return new Set(events.map((event) => `${event.kind}:${event.id}`)).size;
+}
+
+function renderStatisticsChart(year, months) {
+  const bars = monthAbbreviations.map((abbreviation, index) => {
+    const key = `${year}-${String(index + 1).padStart(2, "0")}`;
+    const name = monthFormatter.format(new Date(2000, index, 1));
+    return { key, name, abbreviation, count: statisticsTitleCount(months.get(key) ?? []) };
+  });
+  const peak = Math.max(1, ...bars.map((bar) => bar.count));
+  const selectMonth = (bar) => {
+    statisticsSelectedMonth = bar.key;
+    statisticsMonthCount.textContent = `${bar.name} · ${bar.count} Titel`;
+    for (const button of statisticsBars.children) {
+      button.setAttribute("aria-pressed", String(button.dataset.month === bar.key));
+    }
+  };
+  statisticsBars.replaceChildren(...bars.map((bar) => {
+    const button = document.createElement("button");
+    button.className = "media-statistics-bar";
+    button.type = "button";
+    button.dataset.month = bar.key;
+    button.setAttribute("aria-label", `${bar.name}: ${bar.count} Titel`);
+    const track = document.createElement("span");
+    track.className = "media-statistics-track";
+    track.setAttribute("aria-hidden", "true");
+    const fill = document.createElement("span");
+    fill.className = "media-statistics-fill";
+    fill.style.height = `${100 * bar.count / peak}%`;
+    const label = document.createElement("span");
+    label.textContent = bar.abbreviation;
+    label.setAttribute("aria-hidden", "true");
+    track.append(fill);
+    button.append(track, label);
+    button.addEventListener("click", () => selectMonth(bar));
+    return button;
+  }));
+  const initial = bars.find((bar) => bar.key === statisticsSelectedMonth)
+    ?? bars.find((bar) => bar.key === months.keys().next().value)
+    ?? bars[0];
+  selectMonth(initial);
+}
+
+function statisticsMonthDetails(month, events, open) {
+  const details = document.createElement("details");
+  details.className = "media-statistics-month";
+  details.dataset.month = month;
+  details.open = open;
+  const summary = document.createElement("summary");
+  const title = document.createElement("span");
+  title.textContent = monthFormatter.format(events[0].date);
+  const count = document.createElement("span");
+  count.className = "media-statistics-month-total";
+  count.textContent = `${statisticsTitleCount(events)} Titel`;
+  summary.append(title, count);
+  const list = document.createElement("ol");
+  list.setAttribute("role", "list");
+  list.append(...events.map(statisticsEvent));
+  details.append(summary, list);
+  return details;
+}
+
 function renderStatistics() {
   const selectedYear = statisticsYear.value;
   const months = new Map();
@@ -1015,6 +1085,8 @@ function renderStatistics() {
   let rewatchCount = 0;
   for (const event of statisticsEvents) {
     if (event.day.slice(0, 4) !== selectedYear) continue;
+    const kind = event.kind === "season" ? "tv" : event.kind;
+    if (statisticsKind !== "all" && kind !== statisticsKind) continue;
     const month = event.day.slice(0, 7);
     if (!months.has(month)) months.set(month, []);
     months.get(month).push(event);
@@ -1026,17 +1098,12 @@ function renderStatistics() {
     ? `${eventCount} ${eventCount === 1 ? "Eintrag" : "Einträge"} · ${rewatchCount} ${rewatchCount === 1 ? "Rewatch" : "Rewatches"}`
     : "";
   statisticsMessage.hidden = eventCount > 0;
-  statisticsMessage.textContent = eventCount ? "" : `Für ${selectedYear} gibt es noch keine Abschlüsse oder Rewatches.`;
-  statisticsMonths.replaceChildren(...Array.from(months.values(), (events) => {
-    const section = document.createElement("section");
-    section.className = "media-statistics-month";
-    const heading = document.createElement("h2");
-    heading.textContent = monthFormatter.format(events[0].date);
-    const list = document.createElement("ol");
-    list.append(...events.map(statisticsEvent));
-    section.append(heading, list);
-    return section;
-  }));
+  statisticsMessage.textContent = eventCount ? "" : `Keine passenden Abschlüsse oder Rewatches für ${selectedYear}.`;
+  const openMonths = new Set(Array.from(statisticsMonths.querySelectorAll("details[open]"), (details) => details.dataset.month));
+  statisticsMonths.replaceChildren(...Array.from(months, ([month, events]) => (
+    statisticsMonthDetails(month, events, openMonths.has(month))
+  )));
+  renderStatisticsChart(selectedYear, months);
 }
 
 async function loadStatistics() {
@@ -1044,6 +1111,8 @@ async function loadStatistics() {
   statisticsLoading = true;
   const previousYear = statisticsYear.value;
   statisticsYear.disabled = true;
+  statisticsFilters.hidden = true;
+  statisticsChart.hidden = true;
   statisticsSummary.textContent = "";
   statisticsMonths.replaceChildren();
   statisticsRetry.hidden = true;
@@ -1060,6 +1129,8 @@ async function loadStatistics() {
     statisticsYear.replaceChildren(...[...years].sort().reverse().map((year) => new Option(year, year)));
     statisticsYear.value = years.has(previousYear) ? previousYear : currentYear;
     statisticsYear.disabled = false;
+    statisticsFilters.hidden = false;
+    statisticsChart.hidden = false;
     renderStatistics();
   } catch {
     statisticsMessage.textContent = "Die Statistik konnte gerade nicht geladen werden.";
@@ -2158,6 +2229,16 @@ syncMediaView();
 window.addEventListener("hashchange", () => syncMediaView(true));
 statisticsYear.addEventListener("change", renderStatistics);
 statisticsRetry.addEventListener("click", loadStatistics);
+for (const button of statisticsFilters.querySelectorAll("[data-statistics-kind]")) {
+  button.addEventListener("click", () => {
+    if (statisticsKind === button.dataset.statisticsKind) return;
+    statisticsKind = button.dataset.statisticsKind;
+    for (const candidate of statisticsFilters.children) {
+      candidate.setAttribute("aria-pressed", String(candidate === button));
+    }
+    renderStatistics();
+  });
+}
 
 mobileMediaLayout.addEventListener("change", () => {
   renderLibrary();
