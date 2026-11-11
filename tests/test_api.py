@@ -238,7 +238,34 @@ def test_rewatches_are_scoped_to_the_owner(client):
     }).status_code == 302
     assert other.get(endpoint).status_code == 404
     assert other.post(endpoint, json={"watched_on": "2026-07-04"}).status_code == 404
+    assert other.get("/api/media/watch-history").get_json() == {"events": []}
     assert client.get(endpoint).get_json()["rewatches"] == ["2026-07-03"]
+
+
+def test_watch_history_includes_completions_and_separate_rewatches(client):
+    series = client.post("/api/media", json={**MEDIA, "status": "completed"}).get_json()["media"]
+    movie = client.post("/api/media", json={
+        **MEDIA, "tmdb_id": 11, "media_type": "movie", "title": "Krieg der Sterne",
+    }).get_json()["media"]
+    season = client.post("/api/media/seasons", json={
+        "tv_tmdb_id": MEDIA["tmdb_id"], "season_number": 1, "series_title": MEDIA["title"],
+        "season_title": "Staffel 1", "status": "completed",
+    }).get_json()["season"]
+    series_url = f"/api/media/{series['id']}"
+    assert client.post(f"{series_url}/rewatches", json={"watched_on": "2026-03-14"}).status_code == 201
+    assert client.patch(series_url, json={"status": "watching"}).status_code == 200
+    with sqlite3.connect(client.application.config["DATABASE"]) as db:
+        db.execute("UPDATE media_items SET completed_at = ? WHERE id = ?", ("2025-12-20 14:00:00", series["id"]))
+        db.execute("UPDATE saved_seasons SET completed_at = ? WHERE id = ?", ("2026-01-01", season["id"]))
+
+    history = client.get("/api/media/watch-history")
+    assert history.status_code == 200
+    assert history.get_json()["events"] == [
+        {"kind": "tv", "title": series["title"], "watched_at": "2026-03-14", "rewatch": True},
+        {"kind": "season", "title": season["title"], "watched_at": "2026-01-01", "rewatch": False},
+        {"kind": "tv", "title": series["title"], "watched_at": "2025-12-20 14:00:00", "rewatch": False},
+    ]
+    assert movie["completed_at"] is None
 
 
 def test_media_rejects_invalid_identity_and_external_images(client):

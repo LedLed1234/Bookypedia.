@@ -32,8 +32,8 @@
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=2">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}?v=2">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=75">
-  <script defer src="{{ url_for('static', filename='js/media-app.js') }}?v=24"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=76">
+  <script defer src="{{ url_for('static', filename='js/media-app.js') }}?v=25"></script>
 </head>
 <body>
   <header class="site-header">
@@ -45,6 +45,7 @@
       <span class="header-greeting">Hello, {{ current_user['display_name'] }}</span>
     </div>
     <div class="header-actions">
+      <a class="button button-secondary media-statistics-link" href="#statistik" id="media-statistics-link">Statistik</a>
       <div class="appearance-picker">
         <button class="button button-secondary appearance-button" id="appearance-button" type="button" aria-haspopup="menu" aria-expanded="false"><span aria-hidden="true">◐</span><span class="appearance-label">Appearance</span></button>
         <div class="appearance-menu" id="appearance-menu" role="menu" aria-label="Farbschema auswählen" hidden>
@@ -62,8 +63,9 @@
   </header>
 
   <main id="top" class="app-shell">
+    <div id="media-collection-view">
     <section class="search-home" aria-labelledby="hero-title">
-      <h1 id="hero-title">Movies &amp; TV</h1>
+      <h1 id="hero-title" tabindex="-1">Movies &amp; TV</h1>
       <div class="search-box">
         <form class="search-form" id="search-form" role="search">
           <label class="sr-only" for="search-input">Filme und Serien suchen</label>
@@ -124,7 +126,26 @@
         <button class="button button-primary" id="empty-search" type="button">Titel suchen</button>
       </div>
     </section>
+    </div>
+    <section class="media-statistics" id="statistik" aria-labelledby="media-statistics-title" hidden>
+      <div class="media-statistics-heading">
+        <h1 id="media-statistics-title" tabindex="-1">Statistik</h1>
+        <label for="media-statistics-year">Jahr
+          <select class="status-select" id="media-statistics-year" disabled></select>
+        </label>
+      </div>
+      <a class="text-button media-statistics-back" href="#top">Zur Sammlung</a>
+      <p class="media-statistics-summary" id="media-statistics-summary" aria-live="polite"></p>
+      <div class="loading-state" id="media-statistics-message" role="status" hidden></div>
+      <button class="button button-secondary" type="button" id="media-statistics-retry" hidden>Erneut laden</button>
+      <div id="media-statistics-months"></div>
+    </section>
   </main>
+
+  <nav class="media-bottom-nav" aria-label="Moviepedia-Ansichten">
+    <a href="#top" aria-current="page">Sammlung</a>
+    <a href="#statistik">Statistik</a>
+  </nav>
 
   <dialog id="media-preview-dialog" class="dialog media-preview-dialog" aria-labelledby="media-preview-title">
     <div class="media-preview-shell">

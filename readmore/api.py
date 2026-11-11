@@ -955,6 +955,33 @@ def delete_media(media_id):
     return "", 204
 
 
+@api.get("/media/watch-history")
+def media_watch_history():
+    user_id = g.user["id"]
+    rows = get_db().execute(
+        """
+        WITH titles AS (
+            SELECT id, media_type AS kind, title, completed_at
+            FROM media_items WHERE user_id = ?
+            UNION ALL
+            SELECT id, 'season', series_title || ' – ' || season_title, completed_at
+            FROM saved_seasons WHERE user_id = ?
+        )
+        SELECT kind, title, completed_at AS watched_at, 0 AS rewatch
+        FROM titles WHERE completed_at IS NOT NULL AND completed_at != ''
+        UNION ALL
+        SELECT kind, title, rewatches.watched_on, 1
+        FROM titles
+        JOIN media_rewatches AS rewatches
+          ON (titles.kind = 'season' AND rewatches.season_id = titles.id)
+          OR (titles.kind != 'season' AND rewatches.media_id = titles.id)
+        ORDER BY watched_at DESC, title
+        """,
+        (user_id, user_id),
+    ).fetchall()
+    return jsonify(events=[{**dict(row), "rewatch": bool(row["rewatch"])} for row in rows])
+
+
 @api.route("/media/<int:item_id>/rewatches", methods=["GET", "POST"])
 @api.route("/media/seasons/<int:item_id>/rewatches", defaults={"season": True}, methods=["GET", "POST"])
 def media_rewatches(item_id, season=False):

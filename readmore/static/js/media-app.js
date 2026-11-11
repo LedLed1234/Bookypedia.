@@ -84,6 +84,19 @@ const searchForm = document.querySelector("#search-form");
 const searchInput = document.querySelector("#search-input");
 const searchPanel = document.querySelector("#search-panel");
 const searchResults = document.querySelector("#search-results");
+const collectionView = document.querySelector("#media-collection-view");
+const statisticsView = document.querySelector("#statistik");
+const statisticsLink = document.querySelector("#media-statistics-link");
+const statisticsYear = document.querySelector("#media-statistics-year");
+const statisticsSummary = document.querySelector("#media-statistics-summary");
+const statisticsMessage = document.querySelector("#media-statistics-message");
+const statisticsRetry = document.querySelector("#media-statistics-retry");
+const statisticsMonths = document.querySelector("#media-statistics-months");
+const bottomNavLinks = document.querySelectorAll(".media-bottom-nav a");
+const monthFormatter = new Intl.DateTimeFormat("de-DE", { month: "long" });
+const watchKinds = { movie: "Film", tv: "Serie", season: "Staffel" };
+let statisticsEvents = [];
+let statisticsLoading = false;
 const mediaGrid = document.querySelector("#media-grid");
 const loadingState = document.querySelector("#library-loading");
 const emptyState = document.querySelector("#empty-state");
@@ -979,6 +992,99 @@ function watchTime({ iso, date }) {
   time.dateTime = iso;
   time.textContent = completionDateFormatter.format(date);
   return time;
+}
+
+function statisticsEvent(event) {
+  const row = document.createElement("li");
+  row.className = "media-statistics-event";
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = event.title;
+  const meta = document.createElement("p");
+  meta.textContent = [watchKinds[event.kind], event.rewatch ? "Rewatch" : "Abschluss"]
+    .filter(Boolean).join(" · ");
+  copy.append(title, meta);
+  row.append(watchTime(event), copy);
+  return row;
+}
+
+function renderStatistics() {
+  const selectedYear = statisticsYear.value;
+  const months = new Map();
+  let eventCount = 0;
+  let rewatchCount = 0;
+  for (const event of statisticsEvents) {
+    if (event.day.slice(0, 4) !== selectedYear) continue;
+    const month = event.day.slice(0, 7);
+    if (!months.has(month)) months.set(month, []);
+    months.get(month).push(event);
+    eventCount += 1;
+    if (event.rewatch) rewatchCount += 1;
+  }
+
+  statisticsSummary.textContent = eventCount
+    ? `${eventCount} ${eventCount === 1 ? "Eintrag" : "Einträge"} · ${rewatchCount} ${rewatchCount === 1 ? "Rewatch" : "Rewatches"}`
+    : "";
+  statisticsMessage.hidden = eventCount > 0;
+  statisticsMessage.textContent = eventCount ? "" : `Für ${selectedYear} gibt es noch keine Abschlüsse oder Rewatches.`;
+  statisticsMonths.replaceChildren(...Array.from(months.values(), (events) => {
+    const section = document.createElement("section");
+    section.className = "media-statistics-month";
+    const heading = document.createElement("h2");
+    heading.textContent = monthFormatter.format(events[0].date);
+    const list = document.createElement("ol");
+    list.append(...events.map(statisticsEvent));
+    section.append(heading, list);
+    return section;
+  }));
+}
+
+async function loadStatistics() {
+  if (statisticsLoading) return;
+  statisticsLoading = true;
+  const previousYear = statisticsYear.value;
+  statisticsYear.disabled = true;
+  statisticsSummary.textContent = "";
+  statisticsMonths.replaceChildren();
+  statisticsRetry.hidden = true;
+  statisticsMessage.hidden = false;
+  statisticsMessage.textContent = "Dein Verlauf wird geladen …";
+  try {
+    const { events } = await api("/api/media/watch-history");
+    statisticsEvents = events.flatMap((event) => {
+      const watched = watchDate(event.watched_at);
+      return watched ? [{ ...event, ...watched, day: localDateKey(watched.date) }] : [];
+    }).sort((left, right) => right.day.localeCompare(left.day) || right.date - left.date);
+    const currentYear = String(new Date().getFullYear());
+    const years = new Set([currentYear, ...statisticsEvents.map((event) => event.day.slice(0, 4))]);
+    statisticsYear.replaceChildren(...[...years].sort().reverse().map((year) => new Option(year, year)));
+    statisticsYear.value = years.has(previousYear) ? previousYear : currentYear;
+    statisticsYear.disabled = false;
+    renderStatistics();
+  } catch {
+    statisticsMessage.textContent = "Die Statistik konnte gerade nicht geladen werden.";
+    statisticsRetry.hidden = false;
+  } finally {
+    statisticsLoading = false;
+  }
+}
+
+function syncMediaView(moveFocus = false) {
+  const showStatistics = window.location.hash === "#statistik";
+  if (showStatistics === !statisticsView.hidden) return;
+  collectionView.hidden = showStatistics;
+  statisticsView.hidden = !showStatistics;
+  for (const link of [statisticsLink, ...bottomNavLinks]) {
+    const isStatisticsLink = link.hash === "#statistik";
+    if (showStatistics === isStatisticsLink) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+  if (moveFocus) {
+    const heading = document.querySelector(showStatistics ? "#media-statistics-title" : "#hero-title");
+    heading.focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+  if (showStatistics) loadStatistics();
 }
 
 function rewatchEndpoint(item) {
@@ -2048,6 +2154,10 @@ async function initializeApp() {
 }
 
 initializeApp();
+syncMediaView();
+window.addEventListener("hashchange", () => syncMediaView(true));
+statisticsYear.addEventListener("change", renderStatistics);
+statisticsRetry.addEventListener("click", loadStatistics);
 
 mobileMediaLayout.addEventListener("change", () => {
   renderLibrary();
