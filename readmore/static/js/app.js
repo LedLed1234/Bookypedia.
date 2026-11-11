@@ -56,6 +56,7 @@ const STATUS_HISTORY = [
   { status: "read", field: "read_at", label: "Fertig gelesen" },
 ];
 const titleCollator = new Intl.Collator("de", { sensitivity: "base", numeric: true });
+const monthFormatter = new Intl.DateTimeFormat("de-DE", { month: "long" });
 
 const state = {
   books: [],
@@ -94,6 +95,14 @@ const state = {
 const grid = document.querySelector("#book-grid");
 const emptyState = document.querySelector("#empty-state");
 const loadingState = document.querySelector("#library-loading");
+const collectionView = document.querySelector("#top");
+const statisticsView = document.querySelector("#statistics-view");
+const statisticsYear = document.querySelector("#statistics-year");
+const statisticsCount = document.querySelector("#statistics-count");
+const statisticsLoading = document.querySelector("#statistics-loading");
+const statisticsMonths = document.querySelector("#statistics-months");
+const statisticsEmpty = document.querySelector("#statistics-empty");
+const mainViewLinks = document.querySelectorAll("[data-main-view]");
 const searchPanel = document.querySelector("#search-panel");
 const searchResults = document.querySelector("#search-results");
 const searchForm = document.querySelector("#search-form");
@@ -365,7 +374,8 @@ function applyDateFormat(value, persist = true) {
   if (persist) {
     try { localStorage.setItem("bookypedia-date-format", state.dateFormat); } catch (_error) {}
   }
-  if (!loadingState.hidden) renderLibrary();
+  if (loadingState.hidden) renderLibrary();
+  if (!statisticsView.hidden) renderStatistics();
   if (!searchPanel.hidden) renderSearchResults();
   if (!searchSuggestions.hidden && state.suggestionQuery) renderSuggestions(state.suggestionQuery);
   if (state.seriesLoaded) renderSeriesDetails();
@@ -560,6 +570,10 @@ function formatDateParts({ year, month = null, day = null }) {
   if (state.dateFormat === "YYYY-MM-DD") return `${yyyy}-${mm}-${dd}`;
   if (state.dateFormat === "MM/DD/YYYY") return `${mm}/${dd}/${yyyy}`;
   return `${dd}-${mm}-${yyyy}`;
+}
+
+function localDateParts(date) {
+  return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() };
 }
 
 function formatPublicationDate(value) {
@@ -1015,6 +1029,90 @@ function selectSuggestion(index) {
   if (!book) return;
   searchInput.value = book.title;
   executeSearch(book.title);
+}
+
+function updateMainView(moveFocus = false) {
+  const showStatistics = window.location.hash === "#statistik";
+  if (showStatistics === !statisticsView.hidden) return;
+  collectionView.hidden = showStatistics;
+  statisticsView.hidden = !showStatistics;
+  mainViewLinks.forEach((link) => {
+    if (link.dataset.mainView === (showStatistics ? "statistics" : "collection")) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  });
+  if (showStatistics) renderStatistics();
+  if (moveFocus) {
+    document.querySelector(showStatistics ? "#statistics-heading" : "#hero-title").focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+}
+
+function renderStatistics() {
+  statisticsLoading.hidden = loadingState.hidden;
+  statisticsYear.labels[0].hidden = !loadingState.hidden;
+  if (!loadingState.hidden) {
+    statisticsLoading.textContent = loadingState.textContent;
+    return;
+  }
+
+  const completions = state.books
+    .filter((book) => book.status === "read" && book.read_at)
+    .map((book) => ({ book, date: new Date(book.read_at) }))
+    .filter(({ date }) => !Number.isNaN(date.getTime()));
+  const currentYear = new Date().getFullYear();
+  const years = new Set([currentYear, ...completions.map(({ date }) => date.getFullYear())]);
+  const previousYear = Number(statisticsYear.value);
+  statisticsYear.replaceChildren(...[...years].sort((a, b) => b - a).map((year) => new Option(year, year)));
+  const selectedYear = years.has(previousYear) ? previousYear : currentYear;
+  statisticsYear.value = String(selectedYear);
+
+  const booksForYear = completions
+    .filter(({ date }) => date.getFullYear() === selectedYear)
+    .sort((a, b) => a.date - b.date);
+  const count = booksForYear.length;
+  statisticsCount.textContent = `${count} ${count === 1 ? "Buch" : "Bücher"} gelesen`;
+  statisticsEmpty.hidden = count > 0;
+  statisticsMonths.replaceChildren();
+
+  let previousMonth = -1;
+  let list;
+  for (const { book, date } of booksForYear) {
+    const month = date.getMonth();
+    if (month !== previousMonth) {
+      previousMonth = month;
+      const group = document.createElement("section");
+      const heading = document.createElement("h2");
+      heading.textContent = monthFormatter.format(date);
+      list = document.createElement("ul");
+      list.className = "statistics-book-list";
+      group.append(heading, list);
+      statisticsMonths.append(group);
+    }
+    list.append(statisticsBookRow(book, date));
+  }
+}
+
+function statisticsBookRow(book, date) {
+  const row = document.createElement("li");
+  const details = document.createElement("div");
+  details.className = "statistics-book-details";
+  const title = document.createElement("button");
+  title.className = "book-title-link book-title";
+  title.type = "button";
+  title.textContent = book.title;
+  title.addEventListener("click", () => openBookDetails(book));
+  const author = document.createElement("p");
+  author.className = "book-author";
+  author.textContent = authorText(book);
+  details.append(title, author);
+  const time = document.createElement("time");
+  time.dateTime = book.read_at;
+  time.textContent = formatDateParts(localDateParts(date));
+  row.append(suggestionCover(book), details, time);
+  return row;
 }
 
 function renderLibrary() {
@@ -1715,11 +1813,7 @@ function formatReadingDate(value) {
   if (!value) return "Nicht erfasst";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Nicht erfasst";
-  const formattedDate = formatDateParts({
-    year: date.getFullYear(),
-    month: date.getMonth() + 1,
-    day: date.getDate(),
-  });
+  const formattedDate = formatDateParts(localDateParts(date));
   const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   return `${formattedDate}, ${time}`;
 }
@@ -2167,6 +2261,7 @@ async function loadBooks() {
   state.books = payload.books;
   if (state.libraryMode === "series") await ensureSeriesIndex(state.books);
   renderLibrary();
+  if (!statisticsView.hidden) renderStatistics();
   if (collectionDialog.open && state.activeSeriesKey) renderCollectionDialog(state.activeSeriesKey);
   if (bookDialog.open && state.detailBook) {
     const savedBook = findCollectionBook(state.detailBook);
@@ -2494,6 +2589,8 @@ collectionOtherToggle.addEventListener("click", () => {
 document.querySelector(".clear-rating").addEventListener("click", () => {
   document.querySelectorAll('[name="rating"]').forEach((radio) => { radio.checked = false; });
 });
+window.addEventListener("hashchange", () => updateMainView(true));
+statisticsYear.addEventListener("change", renderStatistics);
 appearanceButton.addEventListener("click", () => setAppearanceMenu(appearanceMenu.hidden));
 themeOptions.forEach((option) => option.addEventListener("click", () => {
   applyTheme(option.dataset.themeOption);
@@ -2625,10 +2722,12 @@ async function initializeApp() {
     await loadBooks();
   } catch (error) {
     loadingState.textContent = `Die Sammlung konnte nicht geladen werden: ${error.message}`;
+    if (!statisticsView.hidden) renderStatistics();
     showToast("Keine Verbindung zur lokalen App.", true);
   }
 }
 
+updateMainView();
 initializeApp();
 
 if ("serviceWorker" in navigator) {

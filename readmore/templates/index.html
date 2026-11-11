@@ -44,8 +44,8 @@
       }
     } catch (_error) {}
   </script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=52">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=60"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=53">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}?v=61"></script>
 </head>
 <body>
   <header class="site-header">
@@ -57,6 +57,7 @@
       <span class="header-greeting">Hello, {{ current_user['display_name'] }}</span>
     </div>
     <div class="header-actions">
+      <a class="button button-secondary statistics-link" href="#statistik" data-main-view="statistics">Statistik</a>
       <div class="appearance-picker">
         <button class="button button-secondary appearance-button" id="appearance-button" type="button" aria-haspopup="menu" aria-expanded="false">
           <span aria-hidden="true">◐</span><span class="appearance-label">Appearance</span>
@@ -100,7 +101,7 @@
 
   <main id="top" class="app-shell">
     <section class="search-home" aria-labelledby="hero-title">
-      <h1 id="hero-title">Reading Library</h1>
+      <h1 id="hero-title" tabindex="-1">Reading Library</h1>
       <div class="search-box">
         <form class="search-form" id="search-form" role="search">
           <label class="sr-only" for="search-input">Bücher suchen</label>
@@ -176,6 +177,30 @@
       </div>
     </section>
   </main>
+
+  <main class="app-shell" id="statistics-view" hidden>
+    <section class="statistics-view" aria-labelledby="statistics-heading">
+      <a class="text-button statistics-back" href="#top">← Sammlung</a>
+      <div class="section-heading statistics-heading">
+        <div>
+          <h1 id="statistics-heading" tabindex="-1">Statistik</h1>
+          <p class="view-count" id="statistics-count" role="status"></p>
+        </div>
+        <label class="statistics-year" for="statistics-year" hidden>
+          Jahr
+          <select id="statistics-year"></select>
+        </label>
+      </div>
+      <div id="statistics-loading" class="loading-state" role="status">Deine Sammlung wird geladen …</div>
+      <div id="statistics-months" class="statistics-months"></div>
+      <p class="empty-state statistics-empty" id="statistics-empty" hidden>Für dieses Jahr sind keine Abschlussdaten erfasst.</p>
+    </section>
+  </main>
+
+  <nav class="mobile-navigation" aria-label="Hauptnavigation">
+    <a href="#top" data-main-view="collection" aria-current="page">Sammlung</a>
+    <a href="#statistik" data-main-view="statistics">Statistik</a>
+  </nav>
 
   <dialog id="settings-dialog" class="dialog settings-dialog" aria-labelledby="settings-dialog-title">
     <div class="dialog-shell settings-dialog-shell">
